@@ -153,14 +153,17 @@ void handle_request(struct server_app *app, int client_socket) {
     if (strcmp(file_name, "/") == 0) {
         strcpy(file_name, "/index.html"); // handling root case
     }
-
+    // substr from the last . to the end of the string
+    char *temp_file_name = file_name;
+    char *file_type = strrchr(file_name, '.');
     // TODO: Implement proxy and call the function under condition
     // specified in the spec
-    // if (need_proxy(...)) {
-    //    proxy_remote_file(app, client_socket, file_name);
-    // } else {
-    serve_local_file(client_socket, file_name);
-    //}
+    if (file_type != NULL && strcmp(file_type, ".ts") == 0) {
+        proxy_remote_file(app, client_socket, file_name);
+    } 
+    else {
+        serve_local_file(client_socket, file_name);
+    }
 }
 
 void serve_local_file(int client_socket, const char *path) {
@@ -211,6 +214,12 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // Bonus:
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
+
+    // char response[1082];
+
+    // send(server_socket, response, strlen(response), 0);
+
+    // printf("Response %s\n", response);
 
     char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
     send(client_socket, response, strlen(response), 0);
