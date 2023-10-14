@@ -144,7 +144,15 @@ void handle_request(struct server_app *app, int client_socket) {
 
     // TODO: Parse the header and extract essential fields, e.g. file name
     // Hint: if the requested path is "/" (root), default to index.html
-    char file_name[] = "index.html";
+    char file_name[500];
+    // create var for requested filename
+    char *format = "GET %500s ";
+    // printf("Request %s\n", request);
+    sscanf(request, format, file_name);
+
+    if (strcmp(file_name, "/") == 0) {
+        strcpy(file_name, "/index.html"); // handling root case
+    }
 
     // TODO: Implement proxy and call the function under condition
     // specified in the spec
@@ -167,13 +175,31 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
-    char response[] = "HTTP/1.0 200 OK\r\n"
+    char filepath[501] = ".";
+    strcat(filepath, path);
+    FILE* fp = fopen(filepath, "r");
+    if(fp) {
+        char response[1082];
+        char file_content[1000]; // large files sizes will probably need multiple reads and response?
+        fseek(fp, 0L, SEEK_END);
+        long file_size = ftell(fp);
+        fseek(fp, 0L, SEEK_SET);
+        fread(file_content, file_size, 1, fp);
+        sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n%s", file_size, file_content);
+        send(client_socket, response, strlen(response), 0);
+        memset(file_content, 0, sizeof file_content);
+        memset(response, 0, sizeof response);
+    }
+    else {
+        char response[] = "HTTP/1.0 404 Not Found\r\n"
                       "Content-Type: text/plain; charset=UTF-8\r\n"
                       "Content-Length: 15\r\n"
                       "\r\n"
-                      "Sample response";
+                      "File not found.";
 
-    send(client_socket, response, strlen(response), 0);
+        send(client_socket, response, strlen(response), 0);
+    }
+    fclose(fp);
 }
 
 void proxy_remote_file(struct server_app *app, int client_socket, const char *request) {
