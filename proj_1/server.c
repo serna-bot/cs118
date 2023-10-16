@@ -178,20 +178,61 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
+    //get the file type
+    //html: content type, char buf
+    //txt: content type, char buf
+    //img: content type, unsigned char buf
+
     char filepath[501] = ".";
+    char *file_type = strrchr(path, '.');
     strcat(filepath, path);
-    FILE* fp = fopen(filepath, "r");
+    FILE* fp = fopen(filepath, "rb");
     if(fp) {
-        char response[1082];
-        char file_content[1000]; // large files sizes will probably need multiple reads and response?
-        fseek(fp, 0L, SEEK_END);
-        long file_size = ftell(fp);
-        fseek(fp, 0L, SEEK_SET);
-        fread(file_content, file_size, 1, fp);
-        sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n%s", file_size, file_content);
-        send(client_socket, response, strlen(response), 0);
-        memset(file_content, 0, sizeof file_content);
-        memset(response, 0, sizeof response);
+        // fread(file_content, sizeof(unsigned char), file_size, fp);
+        char response[1000085];
+        char content_type[30] = "text/plain";
+        // printf("Content type default %s\n", content_type);
+        if (strcmp(file_type, ".jpg") == 0) {
+            strcpy(content_type, "image/jpeg");
+            unsigned char jpg_file_content[1000000]; // large files sizes will probably need multiple reads and response?
+            size_t bytes_read;
+            bytes_read = fread(jpg_file_content, 1, sizeof(jpg_file_content), fp);
+            sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, bytes_read);
+            send(client_socket, response, strlen(response), 0);
+            send(client_socket, jpg_file_content, bytes_read, 0);
+            memset(content_type, 0, sizeof content_type);
+            memset(jpg_file_content, 0, sizeof jpg_file_content);
+            memset(response, 0, sizeof response);
+        }
+        else {
+            if (strcmp(file_type, ".html") == 0) {
+                strcpy(content_type, "text/html");
+            }
+            char file_content[1000000]; // large files sizes will probably need multiple reads and response?
+            size_t bytes_read;
+            bytes_read = fread(file_content, 1, sizeof(file_content), fp);
+            sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, bytes_read);
+            send(client_socket, response, strlen(response), 0);
+            send(client_socket, file_content, bytes_read, 0);
+            memset(content_type, 0, sizeof content_type);
+            memset(file_content, 0, sizeof file_content);
+            memset(response, 0, sizeof response);
+        }
+        // else if (strcmp(file_type, ".html") == 0) {
+        //     strcpy(content_type, "text/html");
+        //     char file_content[BUFSIZ]; // large files sizes will probably need multiple reads and response?
+        //     size_t bytes_read;
+        //     bytes_read = fread(file_content, sizeof(file_content), 1, fp);
+        // }
+        // else {
+        //     char file_content[BUFSIZ]; // large files sizes will probably need multiple reads and response?
+        //     size_t bytes_read;
+        //     bytes_read = fread(file_content, sizeof(file_content), 1, fp);
+        // }
+        
+        // memset(content_type, 0, sizeof content_type);
+        // memset(file_content, 0, sizeof file_content);
+        // memset(response, 0, sizeof response);
     }
     else {
         char response[] = "HTTP/1.0 404 Not Found\r\n"
@@ -215,7 +256,68 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
 
-    // char response[1082];
+    // struct server_app app;
+    // int server_socket, client_socket;
+    // struct sockaddr_in server_addr, client_addr;
+    // socklen_t client_len;
+    // int ret;
+
+    // app->server_port = DEFAULT_SERVER_PORT;
+    // app->remote_host = "131.179.176.34";
+    // app->remote_port = "5001";
+
+    // server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    // if (server_socket == -1) {
+    //     perror("socket failed");
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // server_addr.sin_family = AF_INET;
+    // server_addr.sin_addr.s_addr = INADDR_ANY;
+    // server_addr.sin_port = htons(app.remote_port);
+
+    // // The following allows the program to immediately bind to the port in case
+    // // previous run exits recently
+    // int optval = 1;
+    // setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+
+    // if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+    //     perror("bind failed");
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // if (listen(server_socket, 10) == -1) {
+    //     perror("listen failed");
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // printf("Server listening on port %d\n", app.remote_port);
+
+    // while (1) {
+    //     client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_len);
+    //     if (client_socket == -1) {
+    //         perror("accept failed");
+    //         continue;
+    //     }
+        
+    //     printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    //     handle_request(&app, client_socket);
+    //     close(client_socket);
+    // }
+
+    // close(server_socket);
+
+    // bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    // if (bytes_read <= 0) {
+    //     return;  // Connection closed or error
+    // }
+
+    // buffer[bytes_read] = '\0';
+    // // copy buffer to a new string
+    // char *request = malloc(strlen(buffer) + 1);
+    // strcpy(request, buffer);
+
+    // char response[BUFSIZ];
 
     // send(server_socket, response, strlen(response), 0);
 
