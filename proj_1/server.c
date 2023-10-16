@@ -159,7 +159,7 @@ void handle_request(struct server_app *app, int client_socket) {
     // TODO: Implement proxy and call the function under condition
     // specified in the spec
     if (file_type != NULL && strcmp(file_type, ".ts") == 0) {
-        proxy_remote_file(app, client_socket, file_name);
+        proxy_remote_file(app, client_socket, request);
     } 
     else {
         serve_local_file(client_socket, file_name);
@@ -178,61 +178,48 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
-    //get the file type
-    //html: content type, char buf
-    //txt: content type, char buf
-    //img: content type, unsigned char buf
-
-    char filepath[501] = ".";
-    char *file_type = strrchr(path, '.');
+    char filepath[strlen(path) + 1];
+    strcpy(filepath, ".");
     strcat(filepath, path);
+    char *file_type = strrchr(path, '.');
     FILE* fp = fopen(filepath, "rb");
+    fseek(fp, 0, SEEK_END); // seek to end of file
+    size_t file_size = ftell(fp); // get current file pointer
+    fseek(fp, 0, SEEK_SET);
     if(fp) {
         // fread(file_content, sizeof(unsigned char), file_size, fp);
-        char response[1000085];
-        char content_type[30] = "text/plain";
-        // printf("Content type default %s\n", content_type);
+        // char response[1000085];
+        char* response_ptr = (char*)malloc((file_size + 85) * sizeof(char));
+        char* content_type = (char*)malloc((30) * sizeof(char));
+        strcpy(content_type, "text/plain");
         if (strcmp(file_type, ".jpg") == 0) {
+            memset(content_type, 0, (30) * sizeof(char));
             strcpy(content_type, "image/jpeg");
-            unsigned char jpg_file_content[1000000]; // large files sizes will probably need multiple reads and response?
-            size_t bytes_read;
-            bytes_read = fread(jpg_file_content, 1, sizeof(jpg_file_content), fp);
-            sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, bytes_read);
-            send(client_socket, response, strlen(response), 0);
-            send(client_socket, jpg_file_content, bytes_read, 0);
-            memset(content_type, 0, sizeof content_type);
-            memset(jpg_file_content, 0, sizeof jpg_file_content);
-            memset(response, 0, sizeof response);
+            unsigned char* file_content_ptr = (unsigned char*)malloc(file_size * sizeof(unsigned char));
+            fread(file_content_ptr, 1, file_size, fp);
+            sprintf(response_ptr, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, file_size);
+            send(client_socket, response_ptr, strlen(response_ptr), 0);
+            send(client_socket, file_content_ptr, file_size, 0);
+
+            free(file_content_ptr);
+            free(content_type);
+            free(response_ptr);
         }
         else {
             if (strcmp(file_type, ".html") == 0) {
+                memset(content_type, 0, (30) * sizeof(char));
                 strcpy(content_type, "text/html");
             }
-            char file_content[1000000]; // large files sizes will probably need multiple reads and response?
-            size_t bytes_read;
-            bytes_read = fread(file_content, 1, sizeof(file_content), fp);
-            sprintf(response, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, bytes_read);
-            send(client_socket, response, strlen(response), 0);
-            send(client_socket, file_content, bytes_read, 0);
-            memset(content_type, 0, sizeof content_type);
-            memset(file_content, 0, sizeof file_content);
-            memset(response, 0, sizeof response);
+            char* file_content_ptr = (char*)malloc(file_size * sizeof(char));
+            fread(file_content_ptr, 1, file_size, fp);
+            sprintf(response_ptr, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, file_size);
+            send(client_socket, response_ptr, strlen(response_ptr), 0);
+            send(client_socket, file_content_ptr, file_size, 0);
+
+            free(file_content_ptr);
+            free(content_type);
+            free(response_ptr);
         }
-        // else if (strcmp(file_type, ".html") == 0) {
-        //     strcpy(content_type, "text/html");
-        //     char file_content[BUFSIZ]; // large files sizes will probably need multiple reads and response?
-        //     size_t bytes_read;
-        //     bytes_read = fread(file_content, sizeof(file_content), 1, fp);
-        // }
-        // else {
-        //     char file_content[BUFSIZ]; // large files sizes will probably need multiple reads and response?
-        //     size_t bytes_read;
-        //     bytes_read = fread(file_content, sizeof(file_content), 1, fp);
-        // }
-        
-        // memset(content_type, 0, sizeof content_type);
-        // memset(file_content, 0, sizeof file_content);
-        // memset(response, 0, sizeof response);
     }
     else {
         char response[] = "HTTP/1.0 404 Not Found\r\n"
@@ -256,73 +243,49 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
 
-    // struct server_app app;
-    // int server_socket, client_socket;
-    // struct sockaddr_in server_addr, client_addr;
-    // socklen_t client_len;
-    // int ret;
+    struct sockaddr_in remote_addr;
+    int status;
 
-    // app->server_port = DEFAULT_SERVER_PORT;
-    // app->remote_host = "131.179.176.34";
-    // app->remote_port = "5001";
+    int remote_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (remote_socket == -1) {
+        perror("remote socket failed");
+        exit(EXIT_FAILURE);
+    }
 
-    // server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    // if (server_socket == -1) {
-    //     perror("socket failed");
-    //     exit(EXIT_FAILURE);
-    // }
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_addr.s_addr = INADDR_ANY;
+    remote_addr.sin_port = htons(app->remote_port);
 
-    // server_addr.sin_family = AF_INET;
-    // server_addr.sin_addr.s_addr = INADDR_ANY;
-    // server_addr.sin_port = htons(app.remote_port);
+    printf("Server listening on port %d\n", app->remote_port);
 
-    // // The following allows the program to immediately bind to the port in case
-    // // previous run exits recently
-    // int optval = 1;
-    // setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+    if (inet_pton(AF_INET, app->remote_host, &remote_addr.sin_addr) == -1) { 
+        perror("Invalid address");
+        char response[] = "HTTP/1.0 404 Not Found\r\n\r\nNot Found";
+        send(client_socket, response, strlen(response), 0);
+        close(remote_socket);
+        return; 
+    } 
 
-    // if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-    //     perror("bind failed");
-    //     exit(EXIT_FAILURE);
-    // }
+    status = connect(remote_socket, (struct sockaddr*)&remote_addr, sizeof(remote_addr));
+    if (status == -1) {
+        perror("Connection failed");
+        char response[] = "HTTP/1.0 502 Bad Gateway\r\n\r\nBad Gateway";
+        send(client_socket, response, strlen(response), 0);
+        close(remote_socket);
+        return;
+    }
 
-    // if (listen(server_socket, 10) == -1) {
-    //     perror("listen failed");
-    //     exit(EXIT_FAILURE);
-    // }
+    printf("Successfully connected!\n");
 
-    // printf("Server listening on port %d\n", app.remote_port);
+    unsigned char remote_response[1000000] = {0};
+    send(remote_socket, request, strlen(request), 0); 
 
-    // while (1) {
-    //     client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_len);
-    //     if (client_socket == -1) {
-    //         perror("accept failed");
-    //         continue;
-    //     }
-        
-    //     printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-    //     handle_request(&app, client_socket);
-    //     close(client_socket);
-    // }
+    read(remote_socket, remote_response, sizeof(remote_response));
 
-    // close(server_socket);
+    close(remote_socket);
 
-    // bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-    // if (bytes_read <= 0) {
-    //     return;  // Connection closed or error
-    // }
+    printf("Response from Remote:\n%s\n", remote_response);
 
-    // buffer[bytes_read] = '\0';
-    // // copy buffer to a new string
-    // char *request = malloc(strlen(buffer) + 1);
-    // strcpy(request, buffer);
-
-    // char response[BUFSIZ];
-
-    // send(server_socket, response, strlen(response), 0);
-
-    // printf("Response %s\n", response);
-
-    char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
-    send(client_socket, response, strlen(response), 0);
+    // char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
+    // send(client_socket, response, strlen(response), 0);
 }
