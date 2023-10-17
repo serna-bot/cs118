@@ -267,7 +267,7 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     } 
 
     status = connect(remote_socket, (struct sockaddr*)&remote_addr, sizeof(remote_addr));
-    if (status == -1) {
+    if (status <= -1) {
         perror("Connection failed");
         char response[] = "HTTP/1.0 502 Bad Gateway\r\n\r\nBad Gateway";
         send(client_socket, response, strlen(response), 0);
@@ -275,17 +275,31 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
         return;
     }
 
-    printf("Successfully connected!\n");
 
-    unsigned char remote_response[1000000] = {0};
+    unsigned char *remote_response = (unsigned char*)malloc((BUFFER_SIZE) * sizeof(unsigned char));
+    ssize_t response_bytes, response_size = 0;
     send(remote_socket, request, strlen(request), 0); 
 
-    read(remote_socket, remote_response, sizeof(remote_response));
+    while ((response_bytes = recv(remote_socket, remote_response + response_size, (BUFFER_SIZE) * sizeof(unsigned char), 0)) > 0) {
+        if (response_bytes <= -1 ) {
+            perror("Socket Read Error");
+            return;
+        }
+        else {
+            response_size += response_bytes;
+            unsigned char *new_remote_response = (unsigned char *) realloc(remote_response, (BUFFER_SIZE) * sizeof(unsigned char));
+            if (new_remote_response == NULL) {
+                perror("Realloc Error");
+                break;
+            }
+            remote_response = new_remote_response;
+        }
+    }
 
     close(remote_socket);
 
-    printf("Response from Remote:\n%s\n", remote_response);
+    //need to replace content-type 
 
-    // char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
-    // send(client_socket, response, strlen(response), 0);
+    send(client_socket, remote_response, response_size, 0);
+    free(remote_response);
 }

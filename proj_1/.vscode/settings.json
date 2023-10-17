@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "cstring": "c",
-        "locale": "c"
+        "locale": "c",
+        "istream": "c",
+        "*.tcc": "c"
     }
 }
