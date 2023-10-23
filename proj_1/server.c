@@ -144,21 +144,44 @@ void handle_request(struct server_app *app, int client_socket) {
 
     // TODO: Parse the header and extract essential fields, e.g. file name
     // Hint: if the requested path is "/" (root), default to index.html
+    // char* file_name = (char*)malloc((BUFFER_SIZE) * sizeof(char));
+    // // create var for requested filename
+    // char *format = "GET %500s HTTP"; //assuming that the filename is a max of 500 chars
+    // // printf("Request %s\n", request);
+    // sscanf(request, format, &file_name);
+    // printf("filename: %s", file_name);
+
+    // if (strcmp(file_name, "/") == 0) {
+    //     strcpy(file_name, "/index.html"); // handling root case
+    // }
+    // substr from the last . to the end of the string
     char file_name[500];
     // create var for requested filename
-    char *format = "GET %500s ";
+    char *format = "GET %500s%n ";
+    int file_name_size;
     // printf("Request %s\n", request);
-    sscanf(request, format, file_name);
+    sscanf(request, format, file_name, &file_name_size);
+    file_name[file_name_size] = '\0';
+    // printf("Filename %s\n", file_name);
 
     if (strcmp(file_name, "/") == 0) {
         strcpy(file_name, "/index.html"); // handling root case
     }
-    // substr from the last . to the end of the string
-    char *temp_file_name = file_name;
-    char *file_type = strrchr(file_name, '.');
+    // printf("Filename %s\n", file_name);
+    char *tmp = strrchr(file_name, '.');
+    char *file_type = (char*)malloc((50) * sizeof(char));
+
+    if (strrchr(file_name, '.') != NULL) {
+        strcpy(file_type, tmp);
+    }
+    else {
+        strcpy(file_type, "");
+        // printf("filetype: %s", file_type);
+    }
+    // printf("filetype: %s", file_type);
     // TODO: Implement proxy and call the function under condition
     // specified in the spec
-    if (file_type != NULL && strcmp(file_type, ".ts") == 0) {
+    if (strcmp(file_type, ".ts") == 0) {
         proxy_remote_file(app, client_socket, request);
     } 
     else {
@@ -181,19 +204,44 @@ void serve_local_file(int client_socket, const char *path) {
     char filepath[strlen(path) + 1];
     strcpy(filepath, ".");
     strcat(filepath, path);
-    char *file_type = strrchr(path, '.');
+    char *tmp = strrchr(path, '.');
+    char *file_type = (char*)malloc((50) * sizeof(char));
+    
+    if (strrchr(path, '.') != NULL) {
+        strcpy(file_type, tmp);
+    }
+    else {
+        strcpy(file_type, "");
+        // printf("filetype: %s", file_type);
+    }
+    // printf("filetype: %s", file_type);
     FILE* fp = fopen(filepath, "rb");
-    fseek(fp, 0, SEEK_END); // seek to end of file
-    size_t file_size = ftell(fp); // get current file pointer
-    fseek(fp, 0, SEEK_SET);
+
+    
     if(fp) {
+        fseek(fp, 0, SEEK_END); // seek to end of file
+        size_t file_size = ftell(fp); // get current file pointer
+        fseek(fp, 0, SEEK_SET);
         // fread(file_content, sizeof(unsigned char), file_size, fp);
         // char response[1000085];
-        char* response_ptr = (char*)malloc((file_size + 85) * sizeof(char));
-        char* content_type = (char*)malloc((30) * sizeof(char));
+        char* response_ptr = (char*)malloc((BUFFER_SIZE) * sizeof(char));
+        char* content_type = (char*)malloc((50) * sizeof(char));
         strcpy(content_type, "text/plain");
-        if (strcmp(file_type, ".jpg") == 0) {
-            memset(content_type, 0, (30) * sizeof(char));
+        if (strcmp(file_type, "") == 0) {
+            memset(content_type, 0, (50) * sizeof(char));
+            strcpy(content_type, "application/octet-stream");
+            unsigned char* file_content_ptr = (unsigned char*)malloc(file_size * sizeof(unsigned char));
+            fread(file_content_ptr, 1, file_size, fp);
+            sprintf(response_ptr, "HTTP/1.0 200 OK\r\nContent-Type: %s; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", content_type, file_size);
+            send(client_socket, response_ptr, strlen(response_ptr), 0);
+            send(client_socket, file_content_ptr, file_size, 0);
+
+            free(file_content_ptr);
+            free(content_type);
+            free(response_ptr);
+        }
+        else if (strcmp(file_type, ".jpg") == 0) {
+            memset(content_type, 0, (50) * sizeof(char));
             strcpy(content_type, "image/jpeg");
             unsigned char* file_content_ptr = (unsigned char*)malloc(file_size * sizeof(unsigned char));
             fread(file_content_ptr, 1, file_size, fp);
@@ -207,7 +255,7 @@ void serve_local_file(int client_socket, const char *path) {
         }
         else {
             if (strcmp(file_type, ".html") == 0) {
-                memset(content_type, 0, (30) * sizeof(char));
+                memset(content_type, 0, (50) * sizeof(char));
                 strcpy(content_type, "text/html");
             }
             char* file_content_ptr = (char*)malloc(file_size * sizeof(char));
@@ -256,7 +304,7 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     remote_addr.sin_addr.s_addr = INADDR_ANY;
     remote_addr.sin_port = htons(app->remote_port);
 
-    printf("Server listening on port %d\n", app->remote_port);
+    // printf("Server listening on port %d\n", app->remote_port);
 
     if (inet_pton(AF_INET, app->remote_host, &remote_addr.sin_addr) == -1) { 
         perror("Invalid address");
@@ -276,30 +324,47 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     }
 
 
+    // unsigned char *remote_response = (unsigned char*)malloc((BUFFER_SIZE) * sizeof(unsigned char));
+    // ssize_t response_bytes, response_size = 0;
+    // send(remote_socket, request, strlen(request), 0); 
+
+    // while ((response_bytes = recv(remote_socket, remote_response + response_size, (BUFFER_SIZE) * sizeof(unsigned char), 0)) > 0) {
+    //     if (response_bytes <= -1 ) {
+    //         perror("Socket Read Error");
+    //         return;
+    //     }
+    //     else {
+    //         response_size += response_bytes;
+    //         unsigned char *new_remote_response = (unsigned char *) realloc(remote_response, (BUFFER_SIZE) * sizeof(unsigned char));
+    //         if (new_remote_response == NULL) {
+    //             perror("Realloc Error");
+    //             break;
+    //         }
+    //         remote_response = new_remote_response;
+    //     }
+    // }
+
+    // close(remote_socket);
+
+
+    // send(client_socket, remote_response, response_size, 0);
+    // free(remote_response);
+    
     unsigned char *remote_response = (unsigned char*)malloc((BUFFER_SIZE) * sizeof(unsigned char));
-    ssize_t response_bytes, response_size = 0;
+    ssize_t response_bytes = 0;
     send(remote_socket, request, strlen(request), 0); 
 
-    while ((response_bytes = recv(remote_socket, remote_response + response_size, (BUFFER_SIZE) * sizeof(unsigned char), 0)) > 0) {
+    while ((response_bytes = recv(remote_socket, remote_response, (BUFFER_SIZE) * sizeof(unsigned char), 0)) > 0) {
         if (response_bytes <= -1 ) {
             perror("Socket Read Error");
             return;
         }
         else {
-            response_size += response_bytes;
-            unsigned char *new_remote_response = (unsigned char *) realloc(remote_response, (BUFFER_SIZE) * sizeof(unsigned char));
-            if (new_remote_response == NULL) {
-                perror("Realloc Error");
-                break;
-            }
-            remote_response = new_remote_response;
+            send(client_socket, remote_response, response_bytes, 0);
+            memset(remote_response, 0, (BUFFER_SIZE) * sizeof(unsigned char));
         }
     }
 
     close(remote_socket);
-
-    //need to replace content-type 
-
-    send(client_socket, remote_response, response_size, 0);
     free(remote_response);
 }

@@ -3,6 +3,8 @@
         "cstring": "c",
         "locale": "c",
         "istream": "c",
-        "*.tcc": "c"
+        "*.tcc": "c",
+        "ios": "c",
+        "vector": "c"
     }
 }
