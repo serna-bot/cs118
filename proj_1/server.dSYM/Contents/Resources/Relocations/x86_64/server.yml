@@ -2,11 +2,11 @@
 triple:          'x86_64-apple-darwin'
 binary-path:     '/Users/serenaong/Documents/cs118_proj/proj_1/server'
 relocations:
-  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002E80, symSize: 0x190 }
-  - { offsetInCU: 0x82, offset: 0x82, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002E80, symSize: 0x190 }
-  - { offsetInCU: 0x12C, offset: 0x12C, size: 0x8, addend: 0x0, symName: _parse_args, symObjAddr: 0x190, symBinAddr: 0x100003010, symSize: 0x140 }
-  - { offsetInCU: 0x17A, offset: 0x17A, size: 0x8, addend: 0x0, symName: __OSSwapInt16, symObjAddr: 0x2D0, symBinAddr: 0x100003150, symSize: 0x20 }
-  - { offsetInCU: 0x1A2, offset: 0x1A2, size: 0x8, addend: 0x0, symName: _handle_request, symObjAddr: 0x2F0, symBinAddr: 0x100003170, symSize: 0x210 }
-  - { offsetInCU: 0x24E, offset: 0x24E, size: 0x8, addend: 0x0, symName: _proxy_remote_file, symObjAddr: 0x500, symBinAddr: 0x100003380, symSize: 0x300 }
-  - { offsetInCU: 0x34D, offset: 0x34D, size: 0x8, addend: 0x0, symName: _serve_local_file, symObjAddr: 0x800, symBinAddr: 0x100003680, symSize: 0x5B2 }
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002D90, symSize: 0x190 }
+  - { offsetInCU: 0x82, offset: 0x82, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002D90, symSize: 0x190 }
+  - { offsetInCU: 0x12C, offset: 0x12C, size: 0x8, addend: 0x0, symName: _parse_args, symObjAddr: 0x190, symBinAddr: 0x100002F20, symSize: 0x140 }
+  - { offsetInCU: 0x17A, offset: 0x17A, size: 0x8, addend: 0x0, symName: __OSSwapInt16, symObjAddr: 0x2D0, symBinAddr: 0x100003060, symSize: 0x20 }
+  - { offsetInCU: 0x1A2, offset: 0x1A2, size: 0x8, addend: 0x0, symName: _handle_request, symObjAddr: 0x2F0, symBinAddr: 0x100003080, symSize: 0x330 }
+  - { offsetInCU: 0x26C, offset: 0x26C, size: 0x8, addend: 0x0, symName: _proxy_remote_file, symObjAddr: 0x620, symBinAddr: 0x1000033B0, symSize: 0x2C0 }
+  - { offsetInCU: 0x33D, offset: 0x33D, size: 0x8, addend: 0x0, symName: _serve_local_file, symObjAddr: 0x8E0, symBinAddr: 0x100003670, symSize: 0x5B2 }
 ...

@@ -144,24 +144,34 @@ void handle_request(struct server_app *app, int client_socket) {
 
     // TODO: Parse the header and extract essential fields, e.g. file name
     // Hint: if the requested path is "/" (root), default to index.html
-    // char* file_name = (char*)malloc((BUFFER_SIZE) * sizeof(char));
-    // // create var for requested filename
-    // char *format = "GET %500s HTTP"; //assuming that the filename is a max of 500 chars
-    // // printf("Request %s\n", request);
-    // sscanf(request, format, &file_name);
-    // printf("filename: %s", file_name);
 
-    // if (strcmp(file_name, "/") == 0) {
-    //     strcpy(file_name, "/index.html"); // handling root case
-    // }
-    // substr from the last . to the end of the string
+    char unformatted_file_name[500];
     char file_name[500];
     // create var for requested filename
-    char *format = "GET %500s%n ";
+    char *format = "GET %500s%n HTTP";
     int file_name_size;
     // printf("Request %s\n", request);
-    sscanf(request, format, file_name, &file_name_size);
-    file_name[file_name_size] = '\0';
+    sscanf(request, format, unformatted_file_name, &file_name_size);
+    unformatted_file_name[file_name_size] = '\0';
+
+    int i = 0;
+    
+    while (i <= file_name_size) {
+        for (int j = 0; j <=  file_name_size; j++) {
+            if (unformatted_file_name[i] == '%' && i + 2 <= file_name_size && unformatted_file_name[i + 1] == '2') {
+                if (unformatted_file_name[i + 2] == '0')
+                    file_name[j] = ' ';
+                else if (unformatted_file_name[i + 2] == '5')
+                    file_name[j] = '%';
+                i += 3;
+
+            }
+            else {
+                file_name[j] = unformatted_file_name[i];
+                i++;
+            }
+        }
+    }
     // printf("Filename %s\n", file_name);
 
     if (strcmp(file_name, "/") == 0) {
