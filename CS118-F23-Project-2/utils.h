@@ -16,6 +16,7 @@
 #define WINDOW_SIZE 5
 #define TIMEOUT 2
 #define MAX_SEQUENCE 1024
+#define MAX_PKT_QUEUE 100
 
 
 
@@ -56,47 +57,150 @@ void printPayload(struct packet* pkt) {
     printf("Value of packet payload: %.*s\n", pkt->length, pkt->payload);
 }
 
-//Packet Buffer
-struct packet_buffer {
-    struct packet *buf_ptr;
-    int *seq_map_ptr;
-    unsigned int max_pckts;
+// struct packet* get_packet(struct packet_buffer* packet_buffer, int index) {
+//     return &(packet_buffer->buf_ptr[index]);
+// }
+
+struct pck_node {
+    struct packet curr;
+    struct pck_node* next;
 };
 
-void create_buffer(struct packet_buffer* packet_buffer, unsigned int max_pckts) {
-    packet_buffer->max_pckts = max_pckts;
-    packet_buffer->buf_ptr = (struct packet *)calloc(max_pckts, sizeof(struct packet));
-    packet_buffer->seq_map_ptr = (int *)calloc(max_pckts, sizeof(int));
+struct pck_node* create_pck_node(struct packet pkt) {
+    struct pck_node* new_pkt_node = (struct pck_node*)malloc(sizeof(struct pck_node));
+    new_pkt_node->curr = pkt;
+    new_pkt_node->next = NULL;
+    return new_pkt_node;
 }
 
-void free_buffer(struct packet_buffer* packet_buffer) {
-    free(packet_buffer->buf_ptr);
-    free(packet_buffer->seq_map_ptr);
+void delete_pck_node(struct pck_node* node) {
+    free(node);
 }
 
-int pop_buffer(struct packet_buffer* packet_buffer, unsigned int index) {
-    if (index >= 0 && index < packet_buffer->max_pckts) {
-        packet_buffer->seq_map_ptr[index] = -1;
+//FIFO QUEUE
+struct packet_queue {
+    struct pck_node* front;
+    struct pck_node* rear;
+    int count;
+};
+
+void init_packet_queue(struct packet_queue *pkt_queue) {
+    pkt_queue->front = NULL;
+    pkt_queue->rear = NULL;
+    pkt_queue->count = 0;
+}
+
+int queue_empty(struct packet_queue *pkt_queue) {
+    return (pkt_queue->count == 0);
+}
+
+int queue_full(struct packet_queue *pkt_queue) {
+    return (pkt_queue->count == MAX_PKT_QUEUE);
+}
+
+int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
+    if (!queue_full(pkt_queue)) {
+        struct pck_node* new_pkt_node = create_pck_node(*pkt);
+        if (!in_order) {
+            if (pkt_queue->front == NULL) {
+                pkt_queue->front = new_pkt_node;
+                pkt_queue->rear = new_pkt_node;
+            }
+            else {
+                pkt_queue->rear->next = new_pkt_node;
+                pkt_queue->rear = new_pkt_node;
+            }
+        }
+        else {
+            struct pck_node* curr = pkt_queue->front;
+            struct pck_node* prev = NULL;
+
+            if (!pkt_queue->front) {
+                pkt_queue->front = new_pkt_node;
+                return 1;
+            }
+
+            while(curr) {
+                if (curr->curr.seqnum > pkt->seqnum) {
+                    if (!prev) {
+                        pkt_queue->front = new_pkt_node;
+                        new_pkt_node->next = curr;
+                    }
+                    else {
+                        // oacket found is not the first value
+                        prev->next = new_pkt_node;
+                        new_pkt_node->next = curr;
+                    }
+                    return 1;
+                }
+                prev = curr;
+                curr = curr->next;
+                if (!curr) {
+                    prev->next = new_pkt_node;
+                }
+            }
+        }
+        pkt_queue->count++;
+    }
+    else {
         return 0;
     }
-    return -1;
+    return 1;
 }
 
-int insert_buffer(struct packet_buffer* packet_buffer, unsigned int index, struct packet *new_packet) {
-    if (index >= 0 && index < packet_buffer->max_pckts) {
-        packet_buffer->buf_ptr[index] = *new_packet;
-        packet_buffer->seq_map_ptr[index] = new_packet->seqnum;
-        return 0;
+struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
+    if (!queue_empty(pkt_queue)) {
+        struct packet* copy = (struct packet*)malloc(sizeof(struct packet));
+        if (!rcv_pkt) {
+            struct pck_node* front_pkt_node = pkt_queue->front;
+            struct packet frontPacket = front_pkt_node->curr;
+            memcpy(copy, &frontPacket, sizeof(struct packet));
+
+            pkt_queue->front = front_pkt_node->next;
+            delete_pck_node(front_pkt_node);
+
+            if (pkt_queue->front == NULL)
+                pkt_queue->rear = NULL;
+
+            pkt_queue->count--;
+            return copy;
+        }
+        else {
+            struct pck_node* curr = pkt_queue->front;
+            struct pck_node* prev = NULL;
+            unsigned short pkt_seq = rcv_pkt->acknum - (unsigned short)rcv_pkt->length;
+
+            while(curr) {
+                if (curr->curr.seqnum == pkt_seq) {
+                    memcpy(copy, curr, sizeof(struct packet));
+                    if (prev == NULL) {
+                        pkt_queue->front = curr->next;
+                        if (pkt_queue->front == NULL) {
+                            // queue is empty now
+                            pkt_queue->rear = NULL;
+                        }
+                    }
+                    else {
+                        // oacket found is not the first value
+                        prev->next = curr->next;
+                        if (prev->next == NULL) {
+                            // If the found packet is the last in the queue, update the rear pointer
+                            pkt_queue->rear = prev;
+                        }
+                    }
+                    delete_pck_node(curr);
+                    return copy;
+                }
+                prev = curr;
+                curr = curr->next;
+            }
+        }
     }
-    return -1;
-}
-
-struct packet* get_packet(struct packet_buffer* packet_buffer, int index) {
-    return &(packet_buffer->buf_ptr[index]);
+    return NULL;
 }
 
 //util function to create pcket from file of size length
-void process_packets(struct packet* pkt, FILE* fp, unsigned int seq, unsigned int ack, unsigned int length) {
+void process_input_packets(struct packet* pkt, FILE* fp, unsigned int seq, unsigned int ack, unsigned int length) {
     char* payload = (char *)calloc(length, sizeof(char));
     fseek(fp, seq, SEEK_SET);
     fread(payload, length, 1, fp);
@@ -105,17 +209,16 @@ void process_packets(struct packet* pkt, FILE* fp, unsigned int seq, unsigned in
     free(payload);
 }
 
-void close_packets(struct packet* pkt) {
-    char* payload = (char *)calloc(1, sizeof(char));
-    build_packet(pkt, htonl(0), htonl(0), '0', '1', 1, payload);
-    free(payload);
-}
+// void close_packets(struct packet* pkt) {
+//     char* payload = (char *)calloc(1, sizeof(char));
+//     build_packet(pkt, htonl(0), htonl(0), '0', '1', 1, payload);
+//     free(payload);
+// }
 
-void ack_close_packets(struct packet* pkt) {
-    char* payload = (char *)calloc(1, sizeof(char));
-    build_packet(pkt, htonl(0), htonl(0), '1', '0', 1, payload);
-    free(payload);
-}
-
+// void ack_close_packets(struct packet* pkt) {
+//     char* payload = (char *)calloc(1, sizeof(char));
+//     build_packet(pkt, htonl(0), htonl(0), '1', '0', 1, payload);
+//     free(payload);
+// }
 
 #endif

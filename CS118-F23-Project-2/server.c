@@ -52,8 +52,39 @@ int main() {
     FILE *fp = fopen("output.txt", "wb");
 
     // TODO: Receive file from the client and save it as output.txt
+    struct packet_queue pkt_buf;
+    init_packet_queue(&pkt_buf);
+    unsigned short order = 0;
+    // need to change the listen_sockfd to nonblocking since ack can be lost and need to handle the timeout
+    // window size can stay as one though (since we dont want race conditions when we write to the output file)
 
-    
+    while(1) {
+        struct packet data_pkt;
+        ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, &server_addr, sizeof(server_addr));
+        if (bytes_rcv != 0) {
+            if (data_pkt.last == '0') {
+                if (order == data_pkt.seqnum - (unsigned short)data_pkt.length) {
+                    // is in order
+                    // write(fp, &data_pkt.payload); //double check this shit
+                    order = data_pkt.seqnum + (unsigned short)data_pkt.length;
+                    while (!queue_empty(&pkt_buf) && pkt_buf.front->curr.seqnum == order) {
+                        struct packet* temp = dequeue(&pkt_buf, NULL);
+                        order = temp->seqnum + (unsigned short)temp->length;
+                        // write(fp, temp->payload); //double check
+                        free(temp);
+                    }
+                }
+                else {
+                    enqueue(&pkt_buf, &data_pkt, 1);
+                }
+            }
+            else {
+                //signifies that the client is done
+                // sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+            }
+        }
+    }
+
 
     fclose(fp);
     close(listen_sockfd);

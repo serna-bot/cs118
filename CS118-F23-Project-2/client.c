@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
-#include <math.h>
+#include <fcntl.h>
 
 #include "utils.h"
 
@@ -79,57 +79,83 @@ int main(int argc, char *argv[]) {
     fseek(fp, 0L, SEEK_SET);
 
     //build packet queue
-    int pkt_buf_sze = (int)ceil((double)sz/PAYLOAD_SIZE);
-    struct packet_buffer pkt_buf;
-    create_buffer(&pkt_buf, pkt_buf_sze);
-    int count, i;
-    count = i = 0;
-    while (count < sz) {
+    int pkt_buf_sze = (int)(sz/PAYLOAD_SIZE)+1;
+    struct packet pkts_to_send[pkt_buf_sze];
+    int count = 0, k = 0;
+
+    for (int i = 0; i < pkt_buf_sze && count < sz; i++) {
         struct packet curr_pkt;
-        process_packets(&curr_pkt, fp, count, 0, PAYLOAD_SIZE);
-        insert_buffer(&pkt_buf, i++, &curr_pkt);
+        process_input_packets(&curr_pkt, fp, count, k, PAYLOAD_SIZE);
+        pkts_to_send[i] = curr_pkt;
         count += PAYLOAD_SIZE;
+        k += 4; //for the ACK
     }
-
-    i = 0; // resettng counter s we can iterate through the queue
-
-    int msec = 0, trigger = 300000; /* 5min (in ms) */
-    clock_t before = clock();
-
-    while ( msec < trigger ) {
-        if (i < pkt_buf_sze) {
-            struct packet* temp = get_packet(&pkt_buf, i++);
-            printPayload(temp);
-        }
-        else {
-            printf("Hello, World\n");
-            break;
-        }
-        // iterate through the queue, send each one
-        // also check for ACKs pop any from the queue if ACK comes
-        // keep track of time since sent ++ msec to each one
-        // any packet that is greater than timeout resend
-
-        // char* packet_data = calloc(1, HEADER_SIZE + PAYLOAD_SIZE);
-        // char* buffer = &packet_data[HEADER_SIZE];
-        // memcpy(&packet_data[0], &curr_pkt.seqnum, 4);
-        // memcpy(&packet_data[4], &header.acknum, 4);
-        // strcpy(buffer, curr_pkt->payload);
-
-        // sendto(send_sockfd, packet_data, HEADER_SIZE + PAYLOAD_SIZE, 0, server_addr_to);
-
-        // free(packet_data);
-
-    clock_t difference = clock() - before;
-    msec = difference * 1000 / CLOCKS_PER_SEC;
-    }
-
-    printf("Time taken %d seconds %d milliseconds (%d iterations)\n", msec/1000, msec%1000, i);
-
-    //note header + payload must be a max of 1200 **
-
-    //create a timer that allows you to keep track of the packet and see if there is an ack from the server side
     
+    fcntl(listen_sockfd, F_GETFL, 0); //making the listen socket non-blocking
+    
+    int acks_rcvd = 0;
+
+    struct packet_queue pkt_queue;
+    init_packet_queue(&pkt_queue);
+    int window_sze = 1, j = 0;
+
+    while ( acks_rcvd < pkt_buf_sze || !queue_empty(&pkt_queue) ) {
+
+        //populate our sliding window (pkt_queue)
+        for (int i = 0; i < window_sze; i++) {
+            sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+            printSend(&pkts_to_send[j], 0);
+            enqueue(&pkt_queue, &pkts_to_send[j], 0);
+            j++;
+        }
+        
+        fd_set ready_fds;
+        struct timeval timeout;
+        int max_fd;
+        
+        FD_ZERO(&ready_fds);
+        max_fd = send_sockfd + 1;
+        FD_SET(send_sockfd, &ready_fds);
+
+        // Set the timeout for select
+        timeout.tv_sec = TIMEOUT;  
+        timeout.tv_usec = 0;
+
+        int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
+        if (ready == -1) {
+            perror("select error.");
+        }
+        else if (ready > 0) {
+            if (FD_ISSET(listen_sockfd, &ready_fds)) {
+                for (int i = 0; i < window_sze; i++) {
+                    struct packet ack_pkt;
+                    ssize_t bytes_rcv = recvfrom(listen_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr, sizeof(client_addr));
+                    if (bytes_rcv != 0) {
+                        printRecv(&ack_pkt);
+                        struct packet* temp = dequeue(&pkt_queue, &ack_pkt);
+                        free(temp);
+                        acks_rcvd++;
+                        //upon each ack increase the window size
+                        // currently assuming that the ack is never corrupted and will always be found 
+                        // somewhere in the queue
+                        //TODO check if dupe ACK
+                    }
+                }
+            }
+        }
+        //timeout occured (ready == 0)
+        while (!queue_empty(&pkt_queue)) {
+            struct packet* popped_pkt = dequeue(&pkt_queue, NULL);
+            if (popped_pkt) {
+                sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+                printSend(popped_pkt, 1);
+                enqueue(&pkt_queue, popped_pkt, 0);
+                // we want to change our algorithm
+            }
+            //else we assume that the packet has been lost or was a duplicate
+        }
+    }
+    //note header + payload must be a max of 1200 **
  
     
     fclose(fp);
