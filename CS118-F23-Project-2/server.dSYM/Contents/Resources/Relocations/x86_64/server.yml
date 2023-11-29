@@ -1,0 +1,22 @@
+---
+triple:          'x86_64-apple-darwin'
+binary-path:     '/Users/serenaong/Documents/cs118_proj/CS118-F23-Project-2/server'
+relocations:
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _build_packet, symObjAddr: 0x0, symBinAddr: 0x100002AE0, symSize: 0x80 }
+  - { offsetInCU: 0x13F, offset: 0x13F, size: 0x8, addend: 0x0, symName: _build_packet, symObjAddr: 0x0, symBinAddr: 0x100002AE0, symSize: 0x80 }
+  - { offsetInCU: 0x1B7, offset: 0x1B7, size: 0x8, addend: 0x0, symName: _printRecv, symObjAddr: 0x80, symBinAddr: 0x100002B60, symSize: 0x70 }
+  - { offsetInCU: 0x1DB, offset: 0x1DB, size: 0x8, addend: 0x0, symName: _printSend, symObjAddr: 0xF0, symBinAddr: 0x100002BD0, symSize: 0xE0 }
+  - { offsetInCU: 0x20D, offset: 0x20D, size: 0x8, addend: 0x0, symName: _printPayload, symObjAddr: 0x1D0, symBinAddr: 0x100002CB0, symSize: 0x30 }
+  - { offsetInCU: 0x231, offset: 0x231, size: 0x8, addend: 0x0, symName: _create_pck_node, symObjAddr: 0x200, symBinAddr: 0x100002CE0, symSize: 0x50 }
+  - { offsetInCU: 0x267, offset: 0x267, size: 0x8, addend: 0x0, symName: _delete_pck_node, symObjAddr: 0x250, symBinAddr: 0x100002D30, symSize: 0x20 }
+  - { offsetInCU: 0x28B, offset: 0x28B, size: 0x8, addend: 0x0, symName: _init_packet_queue, symObjAddr: 0x270, symBinAddr: 0x100002D50, symSize: 0x30 }
+  - { offsetInCU: 0x2AF, offset: 0x2AF, size: 0x8, addend: 0x0, symName: _queue_empty, symObjAddr: 0x2A0, symBinAddr: 0x100002D80, symSize: 0x20 }
+  - { offsetInCU: 0x2D7, offset: 0x2D7, size: 0x8, addend: 0x0, symName: _queue_full, symObjAddr: 0x2C0, symBinAddr: 0x100002DA0, symSize: 0x20 }
+  - { offsetInCU: 0x2FF, offset: 0x2FF, size: 0x8, addend: 0x0, symName: _enqueue, symObjAddr: 0x2E0, symBinAddr: 0x100002DC0, symSize: 0x2D0 }
+  - { offsetInCU: 0x38F, offset: 0x38F, size: 0x8, addend: 0x0, symName: _dequeue, symObjAddr: 0x5B0, symBinAddr: 0x100003090, symSize: 0x2E0 }
+  - { offsetInCU: 0x44B, offset: 0x44B, size: 0x8, addend: 0x0, symName: _process_input_packets, symObjAddr: 0x890, symBinAddr: 0x100003370, symSize: 0xD0 }
+  - { offsetInCU: 0x4B5, offset: 0x4B5, size: 0x8, addend: 0x0, symName: __OSSwapInt32, symObjAddr: 0x960, symBinAddr: 0x100003440, symSize: 0x10 }
+  - { offsetInCU: 0x4DD, offset: 0x4DD, size: 0x8, addend: 0x0, symName: _close_packets, symObjAddr: 0x970, symBinAddr: 0x100003450, symSize: 0x60 }
+  - { offsetInCU: 0x50F, offset: 0x50F, size: 0x8, addend: 0x0, symName: _ack_close_packets, symObjAddr: 0x9D0, symBinAddr: 0x1000034B0, symSize: 0x60 }
+  - { offsetInCU: 0x5DB, offset: 0x5DB, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0xA30, symBinAddr: 0x100003510, symSize: 0x8F8 }
+...

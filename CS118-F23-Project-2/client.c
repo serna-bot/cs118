@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < window_sze; i++) {
                 struct packet ack_pkt;
                 ssize_t bytes_rcv = recv(listen_sockfd, &ack_pkt, sizeof(struct packet), 0);
-                if (bytes_rcv != 0) {
+                if (bytes_rcv > 0) {
                     printRecv(&ack_pkt);
                     while (!queue_empty(&pkt_queue) && ack_pkt.acknum > pkt_queue.front->curr.seqnum) { 
                         //indicates a retransmission occurred, whatever is less than this MUST have been transmitted successfully
