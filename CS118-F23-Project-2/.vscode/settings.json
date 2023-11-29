@@ -15,6 +15,8 @@
         "vector": "c",
         "deque": "c",
         "*.tcc": "c",
-        "ostream": "c"
+        "ostream": "c",
+        "__node_handle": "c",
+        "type_traits": "c"
     }
 }

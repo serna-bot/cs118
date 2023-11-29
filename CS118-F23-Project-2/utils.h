@@ -57,10 +57,6 @@ void printPayload(struct packet* pkt) {
     printf("Value of packet payload: %.*s\n", pkt->length, pkt->payload);
 }
 
-// struct packet* get_packet(struct packet_buffer* packet_buffer, int index) {
-//     return &(packet_buffer->buf_ptr[index]);
-// }
-
 struct pck_node {
     struct packet curr;
     struct pck_node* next;
@@ -110,6 +106,7 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
                 pkt_queue->rear->next = new_pkt_node;
                 pkt_queue->rear = new_pkt_node;
             }
+            pkt_queue->count++;
         }
         else {
             struct pck_node* curr = pkt_queue->front;
@@ -117,6 +114,7 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
 
             if (!pkt_queue->front) {
                 pkt_queue->front = new_pkt_node;
+                pkt_queue->count++;
                 return 1;
             }
 
@@ -131,6 +129,7 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
                         prev->next = new_pkt_node;
                         new_pkt_node->next = curr;
                     }
+                    pkt_queue->count++;
                     return 1;
                 }
                 prev = curr;
@@ -139,8 +138,8 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
                     prev->next = new_pkt_node;
                 }
             }
+            pkt_queue->count++;
         }
-        pkt_queue->count++;
     }
     else {
         return 0;
@@ -189,6 +188,8 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
                         }
                     }
                     delete_pck_node(curr);
+                    pkt_queue->count--;
+                    printf("Dequeued One.");
                     return copy;
                 }
                 prev = curr;
@@ -209,16 +210,16 @@ void process_input_packets(struct packet* pkt, FILE* fp, unsigned int seq, unsig
     free(payload);
 }
 
-// void close_packets(struct packet* pkt) {
-//     char* payload = (char *)calloc(1, sizeof(char));
-//     build_packet(pkt, htonl(0), htonl(0), '0', '1', 1, payload);
-//     free(payload);
-// }
+void close_packets(struct packet* pkt) {
+    char* payload = (char *)calloc(1, sizeof(char));
+    build_packet(pkt, htonl(0), htonl(0), '0', '1', 1, payload);
+    free(payload);
+}
 
-// void ack_close_packets(struct packet* pkt) {
-//     char* payload = (char *)calloc(1, sizeof(char));
-//     build_packet(pkt, htonl(0), htonl(0), '1', '0', 1, payload);
-//     free(payload);
-// }
+void ack_close_packets(struct packet* pkt) {
+    char* payload = (char *)calloc(1, sizeof(char));
+    build_packet(pkt, htonl(0), htonl(0), '1', '0', 1, payload);
+    free(payload);
+}
 
 #endif
