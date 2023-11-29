@@ -81,7 +81,8 @@ int main(int argc, char *argv[]) {
     //build packet queue
     int pkt_buf_sze = (int)(sz/PAYLOAD_SIZE)+3; // should be +2 for the closing packet and also the heaader packet
     struct packet pkts_to_send[pkt_buf_sze]; 
-    int count = HEADER_SIZE, k = 0;
+    int count = 0, k = 1;
+    int last_length = 0;
 
     //add the header packet
     struct packet header_pkt;
@@ -90,17 +91,19 @@ int main(int argc, char *argv[]) {
     build_packet(&header_pkt, 0, 0, '\0', '\0', HEADER_SIZE, &header_data);
     pkts_to_send[0] = header_pkt;
 
-    for (int i = 1; i < pkt_buf_sze - 2 && count < sz; i++) {
+    for (int i = 1; i < pkt_buf_sze - 1 && count < sz; i++) {
         struct packet curr_pkt;
-        process_input_packets(&curr_pkt, fp, count, k, PAYLOAD_SIZE);
+        if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
+        else last_length = PAYLOAD_SIZE;
+        process_input_packets(&curr_pkt, fp, count, k, last_length);
         pkts_to_send[i] = curr_pkt;
-        count += PAYLOAD_SIZE;
-        k += 4; //for the ACK
+        count += last_length;
+        k ++; //for the ACK
     }
     //add the closing packet
     struct packet closing_pkt;
-    char const closing_data[2] = "\n\n";
-    build_packet(&closing_pkt, 0, 0, '1', '\0', 2, &closing_data);
+    char const closing_data[1] = "";
+    build_packet(&closing_pkt, sz+HEADER_SIZE, k, '1', '\0', 1, &closing_data);
     pkts_to_send[pkt_buf_sze - 1] = closing_pkt;
     
     fcntl(listen_sockfd, F_GETFL, 0); //making the listen socket non-blocking
@@ -117,7 +120,7 @@ int main(int argc, char *argv[]) {
         for (int i = pkt_queue.count; i < window_sze; i++) {
             sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
             printSend(&pkts_to_send[j], 0);
-            printPayload(&pkts_to_send[j]);
+            // printPayload(&pkts_to_send[j]);
             enqueue(&pkt_queue, &pkts_to_send[j], 0);
             j++;
         }
@@ -171,7 +174,7 @@ int main(int argc, char *argv[]) {
         //timeout occured (ready == 0)
         else {
             //resend only the first one
-            
+            if (pkt_queue.front->curr.last) break; 
             struct packet* popped_pkt = dequeue(&pkt_queue, NULL);
             if (popped_pkt) {
                 sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));

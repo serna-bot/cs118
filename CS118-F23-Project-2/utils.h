@@ -167,10 +167,9 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
         else {
             struct pck_node* curr = pkt_queue->front;
             struct pck_node* prev = NULL;
-            unsigned short pkt_seq = rcv_pkt->acknum - (unsigned short)rcv_pkt->length;
 
             while(curr) {
-                if (curr->curr.seqnum == pkt_seq) {
+                if (curr->curr.acknum == rcv_pkt->seqnum) {
                     memcpy(copy, curr, sizeof(struct packet));
                     if (prev == NULL) {
                         pkt_queue->front = curr->next;
@@ -189,7 +188,6 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
                     }
                     delete_pck_node(curr);
                     pkt_queue->count--;
-                    printf("Dequeued One.");
                     return copy;
                 }
                 prev = curr;
@@ -201,11 +199,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
 }
 
 //util function to create pcket from file of size length
-void process_input_packets(struct packet* pkt, FILE* fp, unsigned int seq, unsigned int ack, unsigned int length) {
+void process_input_packets(struct packet* pkt, FILE* fp, unsigned int fp_pos, unsigned int ack, unsigned int length) {
     char* payload = (char *)calloc(length, sizeof(char));
-    fseek(fp, seq, SEEK_SET);
+    fseek(fp, fp_pos, SEEK_SET);
     fread(payload, length, 1, fp);
-    build_packet(pkt, htonl(seq), htonl(ack), '0', '0', length, payload);
+    build_packet(pkt, fp_pos + HEADER_SIZE, ack, '\0', '\0', length, payload);
     fseek(fp, 0, SEEK_SET);
     free(payload);
 }
