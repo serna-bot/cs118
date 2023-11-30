@@ -169,11 +169,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
             struct pck_node* prev = NULL;
 
             while(curr) {
-                printf("loop %d\n", curr->curr.acknum);
-                if (curr->curr.acknum == rcv_pkt->seqnum) {
-                    printf("found, dequeuing");
+                if (curr->curr.acknum == rcv_pkt->seqnum && curr->curr.seqnum + curr->curr.length == rcv_pkt->acknum) {
+                    // printf("found, dequeuing\n");
                     memcpy(copy, curr, sizeof(struct packet));
                     if (prev == NULL) {
+                        // found as the first item
                         pkt_queue->front = curr->next;
                         if (pkt_queue->front == NULL) {
                             // queue is empty now
@@ -190,6 +190,8 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
                     }
                     delete_pck_node(curr);
                     pkt_queue->count--;
+                    // printf("done searching queue size: %d\n", pkt_queue->count);
+                    // if (pkt_queue->front) printf("front: %d\n", pkt_queue->front->curr.seqnum);
                     return copy;
                 }
                 prev = curr;

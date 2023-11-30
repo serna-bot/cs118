@@ -105,8 +105,9 @@ int main(int argc, char *argv[]) {
     char const closing_data[1] = "";
     build_packet(&closing_pkt, sz+HEADER_SIZE, k, '1', '\0', 1, &closing_data);
     pkts_to_send[pkt_buf_sze - 1] = closing_pkt;
-    
-    fcntl(listen_sockfd, F_GETFL, 0); //making the listen socket non-blocking
+
+    int flags = fcntl(listen_sockfd, F_GETFL, 0);
+    fcntl(listen_sockfd, F_SETFL, flags | O_NONBLOCK | O_NDELAY); //making the listen socket non-blocking
     
     int acks_rcvd = 0, dup_acks = 0;
 
@@ -114,13 +115,13 @@ int main(int argc, char *argv[]) {
     init_packet_queue(&pkt_queue);
     int window_sze = 1, j = 0;
 
-    printf("packets num: %d\n", pkt_buf_sze);
+    // printf("packets num: %d\n", pkt_buf_sze);
     
     while ( acks_rcvd < pkt_buf_sze || !queue_empty(&pkt_queue) ) {
 
         //populate our sliding window (pkt_queue) change this somehow to deal with data if we are retransitting
-        printf("window size: %d\n", window_sze);
-        for (int i = pkt_queue.count; j < pkt_buf_sze && i < window_sze; i++) {
+        // printf("window size: %d\n", window_sze);
+        for (int i = pkt_queue.count; j < pkt_buf_sze - 1 && i < window_sze; i++) {
             sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
             printSend(&pkts_to_send[j], 0);
             // printPayload(&pkts_to_send[j]);
@@ -145,41 +146,77 @@ int main(int argc, char *argv[]) {
             perror("select error.");
         }
         else if (ready > 0 && FD_ISSET(listen_sockfd, &ready_fds)) {
-            int pkts_in_transmission = window_sze;
-            for (int i = 0; i < pkts_in_transmission; i++) {
+            int pkts_in_transmission = pkt_queue.count;
+            while (pkts_in_transmission > 0) {
+                // printf("Packets in transmission: %d Transmitting pkt SEQ %d\n", pkts_in_transmission, pkt_queue.front->curr.seqnum);
                 struct packet ack_pkt;
-                ssize_t bytes_rcv = recv(listen_sockfd, &ack_pkt, sizeof(struct packet), 0);
+                ssize_t bytes_rcv = recvfrom(listen_sockfd, &ack_pkt, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_from, &addr_size);
+                // printf("Recv %d\n", bytes_rcv);
                 if (bytes_rcv > 0) {
                     printRecv(&ack_pkt);
-                    if (ack_pkt.ack) break;
-                    while (!queue_empty(&pkt_queue) && ack_pkt.seqnum > pkt_queue.front->curr.acknum) { 
+                    if (ack_pkt.ack) {
+                        // printf("Received closing ACK. Exiting loop.\n");
+                        break;
+                    }
+                    if (ack_pkt.acknum == sz + HEADER_SIZE) {
+                        struct packet* temp = dequeue(&pkt_queue, &ack_pkt);
+                        if (temp) {
+                            free(temp);
+                        }
+                        window_sze = 1;
+                        sendto(send_sockfd, &pkts_to_send[pkt_buf_sze - 1], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+                        printSend(&pkts_to_send[pkt_buf_sze - 1], 0);
+                        // printPayload(&pkts_to_send[j]);
+                        enqueue(&pkt_queue, &pkts_to_send[pkt_buf_sze - 1], 0);
+                        // printf("Queue size after sending last packet: %d\n", pkt_queue.count);
+                        pkts_in_transmission--;
+                        break;
+                    }
+                    while (!queue_empty(&pkt_queue) && ack_pkt.seqnum > pkt_queue.front->curr.acknum && ack_pkt.acknum > pkt_queue.front->curr.seqnum) { 
+                        // printf("Retransmission occured or cummulative ACK. Received %d. Emptying %d\n", ack_pkt.seqnum, pkt_queue.front->curr.acknum);
+                        pkts_in_transmission--;
                         //indicates a retransmission occurred, whatever is less than this MUST have been transmitted successfully
                         struct packet* temp = dequeue(&pkt_queue, NULL);
                         if (temp) free(temp);
                     }
-                    printf("packet queue %d\n", pkt_queue.count);
                     struct packet* temp = dequeue(&pkt_queue, &ack_pkt);
                     if (temp) {
                         free(temp);
                         acks_rcvd++;
                         window_sze++;
-                        printf("Found\n");
+                        // printf("Received ACK. Incrementing window size to %d.\n", window_sze);
+                        if (queue_empty(&pkt_queue)) {
+                            printf("Queue is empty. Exiting loop.\n");
+                            break;
+                        }
                     }
                     else {
                         dup_acks++;
                         if (dup_acks == 3) {
                             //initiate fast retransmit
+                            //dequeue packet, and add it again to queue, send
                             dup_acks = 0;
                         }
                         printf("Dupe\n");
                         window_sze = window_sze/2 > 0 ? window_sze/2 : 1;
                     }
+                    pkts_in_transmission--;
                     //upon each ack increase the window size
                     // currently assuming that the ack is never corrupted and will always be found 
                     // somewhere in the queue
                     //TODO check if dupe ACK
                 }
+                else if (bytes_rcv < 0) {
+                    // perror("recv error.");
+                    break;
+                }
+                else {
+                    // printf("Connection closed by the peer.\n");
+                    break;
+                }
+                // printf("end handling recv\n"); 
             }
+            // printf("end\n"); 
         }
         //timeout occured (ready == 0)
         else {

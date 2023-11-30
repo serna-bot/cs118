@@ -67,7 +67,8 @@ int main() {
     char *str_to_write = NULL;
     size_t str_len = 0;
     unsigned int content_length = 0;
-    fcntl(listen_sockfd, F_GETFL, 0);
+    int flags = fcntl(listen_sockfd, F_GETFL, 0);
+    fcntl(listen_sockfd, F_SETFL, flags | O_NONBLOCK | O_NDELAY);
     //write to file
     while(1) {
         fd_set ready_fds;
@@ -89,7 +90,7 @@ int main() {
         }
         else if (ready > 0 && FD_ISSET(listen_sockfd, &ready_fds)) {
             struct packet data_pkt;
-            ssize_t bytes_rcv = recv(listen_sockfd, &data_pkt, sizeof(struct packet), 0);
+            ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, (struct sockaddr *)&client_addr_from, &addr_size);
             if (bytes_rcv < 0) perror("recvfrom");
             else if (bytes_rcv > 0) {
                 printRecv(&data_pkt);
@@ -158,7 +159,7 @@ int main() {
                     }
                     struct packet ack_pkt;
                     char empty_payload[1] = "";
-                    build_packet(&ack_pkt, 0, 0, '\0', '1', 1, &empty_payload);
+                    build_packet(&ack_pkt, data_pkt.acknum + 1, data_pkt.seqnum, '\0', '1', 1, &empty_payload);
                     sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
                     printSend(&ack_pkt, 0);
                     break;
