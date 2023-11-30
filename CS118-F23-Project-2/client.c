@@ -114,10 +114,13 @@ int main(int argc, char *argv[]) {
     init_packet_queue(&pkt_queue);
     int window_sze = 1, j = 0;
 
+    printf("packets num: %d\n", pkt_buf_sze);
+    
     while ( acks_rcvd < pkt_buf_sze || !queue_empty(&pkt_queue) ) {
 
         //populate our sliding window (pkt_queue) change this somehow to deal with data if we are retransitting
-        for (int i = pkt_queue.count; i < window_sze; i++) {
+        printf("window size: %d\n", window_sze);
+        for (int i = pkt_queue.count; j < pkt_buf_sze && i < window_sze; i++) {
             sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
             printSend(&pkts_to_send[j], 0);
             // printPayload(&pkts_to_send[j]);
@@ -142,20 +145,25 @@ int main(int argc, char *argv[]) {
             perror("select error.");
         }
         else if (ready > 0 && FD_ISSET(listen_sockfd, &ready_fds)) {
-            for (int i = 0; i < window_sze; i++) {
+            int pkts_in_transmission = window_sze;
+            for (int i = 0; i < pkts_in_transmission; i++) {
                 struct packet ack_pkt;
                 ssize_t bytes_rcv = recv(listen_sockfd, &ack_pkt, sizeof(struct packet), 0);
                 if (bytes_rcv > 0) {
                     printRecv(&ack_pkt);
-                    while (!queue_empty(&pkt_queue) && ack_pkt.acknum > pkt_queue.front->curr.seqnum) { 
+                    if (ack_pkt.ack) break;
+                    while (!queue_empty(&pkt_queue) && ack_pkt.seqnum > pkt_queue.front->curr.acknum) { 
                         //indicates a retransmission occurred, whatever is less than this MUST have been transmitted successfully
                         struct packet* temp = dequeue(&pkt_queue, NULL);
                         if (temp) free(temp);
                     }
+                    printf("packet queue %d\n", pkt_queue.count);
                     struct packet* temp = dequeue(&pkt_queue, &ack_pkt);
                     if (temp) {
                         free(temp);
                         acks_rcvd++;
+                        window_sze++;
+                        printf("Found\n");
                     }
                     else {
                         dup_acks++;
@@ -163,6 +171,8 @@ int main(int argc, char *argv[]) {
                             //initiate fast retransmit
                             dup_acks = 0;
                         }
+                        printf("Dupe\n");
+                        window_sze = window_sze/2 > 0 ? window_sze/2 : 1;
                     }
                     //upon each ack increase the window size
                     // currently assuming that the ack is never corrupted and will always be found 
@@ -184,7 +194,7 @@ int main(int argc, char *argv[]) {
 
                 // [][][retransmitted packet]
             }
-            // window_sze = 1;
+            window_sze = 1;
             //TODO: later you want ssthresh
         }
     }
@@ -196,4 +206,3 @@ int main(int argc, char *argv[]) {
     close(send_sockfd);
     return 0;
 }
-

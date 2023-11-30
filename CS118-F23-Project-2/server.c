@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "utils.h"
 
@@ -63,9 +64,10 @@ int main() {
     // we are assuming that we are always going to get the first packet (so use blocking socket) 
     // since if it gets lost, it will timeout and retransmit
     
-    char *str_to_write;
+    char *str_to_write = NULL;
     size_t str_len = 0;
-    unsigned int content_length = 0;;
+    unsigned int content_length = 0;
+    fcntl(listen_sockfd, F_GETFL, 0);
     //write to file
     while(1) {
         fd_set ready_fds;
@@ -91,15 +93,14 @@ int main() {
             if (bytes_rcv < 0) perror("recvfrom");
             else if (bytes_rcv > 0) {
                 printRecv(&data_pkt);
-                printPayload(&data_pkt);
+                // printPayload(&data_pkt);
                 if (!data_pkt.last) {
                     // handle the packets if it is not the closing packet
                     struct packet ack_pkt;
                     char empty_payload[1] = "";
 
                     //is the first packet
-                    if (data_pkt.seqnum == 0) {
-                        
+                    if (data_pkt.seqnum == 0 && str_to_write == NULL) {
                         sscanf(data_pkt.payload, "Content Length: %d\n", &content_length);
                         str_to_write = calloc(content_length+1, sizeof(char));
                         build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
@@ -107,15 +108,20 @@ int main() {
                         printSend(&ack_pkt, 0);
                         order += data_pkt.length;
                     }
+                    else if (data_pkt.seqnum == 0) {
+                        build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
+                        sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+                        printSend(&ack_pkt, 1);
+                    }
                     else { 
                         //received an ack so send pkt 
                         if (order == data_pkt.seqnum) {
                             // is in order
                             size_t availableSpace = content_length - str_len;
-                            printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
-                            // strncat(str_to_write, data_pkt.payload, availableSpace); //concat string
+                            // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
                             memcpy(str_to_write + str_len, data_pkt.payload, availableSpace < data_pkt.length ? availableSpace : data_pkt.length);
-                            printf("bhjdfhbae %s\n", str_to_write);
+                            str_len = strlen(str_to_write);
+                            // printf("curr %s\n", str_to_write);
                             order = data_pkt.seqnum + (unsigned short)data_pkt.length;
 
                             //now check if the buffer has items and see if the top item is the next item
@@ -123,9 +129,8 @@ int main() {
                                 struct packet* temp = dequeue(&pkt_buf, NULL);
                                 order = temp->seqnum + (unsigned short)temp->length;
                                 availableSpace = content_length - strlen(str_to_write) - 1;
-                                // strncat(str_to_write, temp->payload, availableSpace); //write to the string
                                 memcpy(str_to_write + str_len, temp->payload, availableSpace < temp->length ? availableSpace : temp->length);
-
+                                str_len = strlen(str_to_write);
                                 free(temp); //free temp since underneath the packet was allocated using malloc
                             }
                         }
@@ -161,7 +166,7 @@ int main() {
             }
         }
     }
-    printf("output: %s\n", str_to_write);
+    // printf("output: %s\n", str_to_write);
     size_t bytesWritten = fwrite(str_to_write, sizeof(char), strlen(str_to_write), fp);
 
     if (bytesWritten != strlen(str_to_write)) perror("write error.");

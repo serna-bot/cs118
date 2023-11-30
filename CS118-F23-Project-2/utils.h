@@ -169,7 +169,9 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
             struct pck_node* prev = NULL;
 
             while(curr) {
+                printf("loop %d\n", curr->curr.acknum);
                 if (curr->curr.acknum == rcv_pkt->seqnum) {
+                    printf("found, dequeuing");
                     memcpy(copy, curr, sizeof(struct packet));
                     if (prev == NULL) {
                         pkt_queue->front = curr->next;
