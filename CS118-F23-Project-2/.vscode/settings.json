@@ -17,6 +17,7 @@
         "*.tcc": "c",
         "ostream": "c",
         "__node_handle": "c",
-        "type_traits": "c"
+        "type_traits": "c",
+        "string.h": "c"
     }
 }

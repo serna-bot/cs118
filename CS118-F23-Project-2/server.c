@@ -7,6 +7,91 @@
 
 #include "utils.h"
 
+int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char* str_to_write, int* order, int* content_length) {
+    // will be inside of a loop for recv
+    //we want to continuously update the buffer and the exp seq and ack so we can send the proper ack once (cummulative ack)
+    size_t str_len = strlen(str_to_write);
+    if (!data_pkt->last) {
+        // handle the packets if it is not the closing packet
+        struct packet ack_pkt;
+        char empty_payload[1] = "";
+
+        //is the first packet
+        if (data_pkt->seqnum == 0 && str_to_write == NULL) {
+            sscanf(data_pkt->payload, "Content Length: %d\n", content_length);
+            str_to_write = calloc(content_length+1, sizeof(char));
+            // build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
+            // sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
+            // printSend(ack_pkt, 0);
+            *order += data_pkt->length;
+            return 0;
+        }
+        // else if (data_pkt.seqnum == 0) {
+        //     // catching if first packet was resent
+        //     build_packet(ack_pkt, data_pkt->acknum, data_pkt->seqnum + data_pkt->length, '\0', '\0', 1, &empty_payload);
+        //     sendto(send_sockfd, ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
+        //     printSend(ack_pkt, 1);
+        // }
+        else { 
+            //received an ack so update the most current in order packet
+            if (order == data_pkt->seqnum) {
+                // is in order
+                size_t availableSpace = content_length - str_len;
+                // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
+                memcpy(str_to_write + str_len, data_pkt->payload, availableSpace < data_pkt->length ? availableSpace : data_pkt->length);
+                str_len = strlen(str_to_write);
+                // printf("curr %s\n", str_to_write);
+                *order = data_pkt->seqnum + (unsigned short)data_pkt->length;
+
+                //now check if the buffer has items and see if the top item is the next item
+                while (!queue_empty(pkt_buf) && pkt_buf->front->curr.seqnum == order) {
+                    struct packet* temp = dequeue(pkt_buf, NULL, 0);
+                    *order = temp->seqnum + (unsigned short)temp->length;
+                    availableSpace = content_length - strlen(str_to_write) - 1;
+                    memcpy(str_to_write + str_len, temp->payload, availableSpace < temp->length ? availableSpace : temp->length);
+                    str_len = strlen(str_to_write);
+                    free(temp); //free temp since underneath the packet was allocated using malloc
+                }
+                return 1;
+                // build_packet(ack_pkt, data_pkt.acknum, order, '\0', '\0', 1, &empty_payload);
+            }
+            else {
+                // packet was out of order
+                // build_packet(ack_pkt, last_in_order_seqnum + 1, order, '\0', '\0', 1, &empty_payload);
+                enqueue(pkt_buf, data_pkt, 1);
+                return 2;
+            }
+            
+            // sendto(send_sockfd, ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+            // printSend(ack_pkt, 0);
+
+            // the seqnum being sent by the server is wrong
+            
+        }
+    }
+    else {
+        //signifies that the client is done
+        while (!queue_empty(pkt_buf) && pkt_buf->front->curr.seqnum == order) {
+            struct packet* temp = dequeue(&pkt_buf, NULL, 0);
+            *order = temp->seqnum + (unsigned short)temp->length;
+            size_t availableSpace = content_length - strlen(str_to_write) - 1;
+            strncat(str_to_write, temp->payload, availableSpace); //write to the string
+
+            free(temp); //free temp since underneath the packet was allocated using malloc
+
+        }
+        //closing packet
+        // struct packet ack_pkt;
+        // char empty_payload[1] = "";
+        // build_packet(&ack_pkt, data_pkt->acknum + 1, data_pkt->seqnum, '\0', '1', 1, &empty_payload);
+        // sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        // printSend(&ack_pkt, 0);
+        return 3;
+    }
+
+    return -1;
+}
+
 int main() {
     int listen_sockfd, send_sockfd;
     struct sockaddr_in server_addr, client_addr_from, client_addr_to;
@@ -65,107 +150,158 @@ int main() {
     // since if it gets lost, it will timeout and retransmit
     
     char *str_to_write = NULL;
-    size_t str_len = 0;
+    // size_t str_len = 0;
     unsigned int content_length = 0;
+    unsigned int seq_num = 0;
+
     int flags = fcntl(listen_sockfd, F_GETFL, 0);
     fcntl(listen_sockfd, F_SETFL, flags | O_NONBLOCK | O_NDELAY);
     //write to file
     while(1) {
-        fd_set ready_fds;
-        struct timeval timeout;
-        int max_fd;
+        struct packet data_pkt;
+        ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, (struct sockaddr *)&client_addr_from, &addr_size);
+        if (bytes_rcv < 0) perror("recvfrom");
+        else if (bytes_rcv > 0) {
+            printRecv(&data_pkt);
+            int res = handle_succ_recv(&data_pkt, &pkt_buf, str_to_write, order, &content_length);
+        }
+        else {
+            struct packet ack_pkt;
+            char empty_payload[1] = "";
+            build_packet(&ack_pkt, seq_num++, order, '\0', '1', 1, &empty_payload);
+            sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+            printSend(&ack_pkt, 0);
+        }
+        // fd_set ready_fds;
+        // struct timeval timeout;
+        // int max_fd;
         
-        FD_ZERO(&ready_fds);
-        max_fd = listen_sockfd + 1;
-        FD_SET(listen_sockfd, &ready_fds);
+        // FD_ZERO(&ready_fds);
+        // max_fd = listen_sockfd + 1;
+        // FD_SET(listen_sockfd, &ready_fds);
 
-        // Set the timeout for select
-        timeout.tv_sec = TIMEOUT;  
-        timeout.tv_usec = 0;
+        // // Set the timeout for select
+        // timeout.tv_sec = TIMEOUT;  
+        // timeout.tv_usec = 0;
 
-        int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
+        // int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
 
-        if (ready == -1) {
-            perror("select error.");
-        }
-        else if (ready > 0 && FD_ISSET(listen_sockfd, &ready_fds)) {
-            struct packet data_pkt;
-            ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, (struct sockaddr *)&client_addr_from, &addr_size);
-            if (bytes_rcv < 0) perror("recvfrom");
-            else if (bytes_rcv > 0) {
-                printRecv(&data_pkt);
-                // printPayload(&data_pkt);
-                if (!data_pkt.last) {
-                    // handle the packets if it is not the closing packet
-                    struct packet ack_pkt;
-                    char empty_payload[1] = "";
+        // if (ready == -1) {
+        //     perror("select error.");
+        // }
+        // else if (ready == 0) {
+        //     //signals that the socket timed out and therefore we can send the ack 
+            
+        // }
+        // while(ready > 0 && FD_ISSET(listen_sockfd, &ready_fds)) {
+        //     struct packet data_pkt;
+        //     ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, (struct sockaddr *)&client_addr_from, &addr_size);
+        //     if (bytes_rcv < 0) perror("recvfrom");
+        //     else if (bytes_rcv > 0) {
+        //         printRecv(&data_pkt);
+        //         int res = handle_succ_recv(&data_pkt, &pkt_queue, str_to_write, order);
 
-                    //is the first packet
-                    if (data_pkt.seqnum == 0 && str_to_write == NULL) {
-                        sscanf(data_pkt.payload, "Content Length: %d\n", &content_length);
-                        str_to_write = calloc(content_length+1, sizeof(char));
-                        build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
-                        sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                        printSend(&ack_pkt, 0);
-                        order += data_pkt.length;
-                    }
-                    else if (data_pkt.seqnum == 0) {
-                        build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
-                        sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                        printSend(&ack_pkt, 1);
-                    }
-                    else { 
-                        //received an ack so send pkt 
-                        if (order == data_pkt.seqnum) {
-                            // is in order
-                            size_t availableSpace = content_length - str_len;
-                            // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
-                            memcpy(str_to_write + str_len, data_pkt.payload, availableSpace < data_pkt.length ? availableSpace : data_pkt.length);
-                            str_len = strlen(str_to_write);
-                            // printf("curr %s\n", str_to_write);
-                            order = data_pkt.seqnum + (unsigned short)data_pkt.length;
+        //         // if (res == 0) {
+        //         //     //got the first packet
+        //         // }
+        //         // else if (res == 1) {
+        //         //     // we got an in order packet
+        //         // }
+        //         // else if (res == 2) {
+        //         //     // we got and out of order packet, send a dupe ack (last in order packet)
+        //         // }
+        //         // else if (res == 3) {
+        //         //     //we have the to send the ack for the last packet
+        //         // }
+        //         if (res < 0 ) {
+        //             perror("something went wrong");
+        //         }
 
-                            //now check if the buffer has items and see if the top item is the next item
-                            while (!queue_empty(&pkt_buf) && pkt_buf.front->curr.seqnum == order) {
-                                struct packet* temp = dequeue(&pkt_buf, NULL);
-                                order = temp->seqnum + (unsigned short)temp->length;
-                                availableSpace = content_length - strlen(str_to_write) - 1;
-                                memcpy(str_to_write + str_len, temp->payload, availableSpace < temp->length ? availableSpace : temp->length);
-                                str_len = strlen(str_to_write);
-                                free(temp); //free temp since underneath the packet was allocated using malloc
-                            }
-                        }
-                        else {
-                            // packet was out of order
-                            enqueue(&pkt_buf, &data_pkt, 1);
-                        }
-                        build_packet(&ack_pkt, data_pkt.acknum, order, '\0', '\0', 1, &empty_payload);
-                        sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                        printSend(&ack_pkt, 0);
+        //         // printPayload(&data_pkt);
+        //         // if (!data_pkt.last) {
+        //         //     // handle the packets if it is not the closing packet
+        //         //     struct packet ack_pkt;
+        //         //     char empty_payload[1] = "";
+
+        //         //     //is the first packet
+        //         //     if (data_pkt.seqnum == 0 && str_to_write == NULL) {
+        //         //         sscanf(data_pkt.payload, "Content Length: %d\n", &content_length);
+        //         //         str_to_write = calloc(content_length+1, sizeof(char));
+        //         //         build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
+        //         //         sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        //         //         printSend(&ack_pkt, 0);
+        //         //         order += data_pkt.length;
+        //         //     }
+        //         //     else if (data_pkt.seqnum == 0) {
+        //         //         build_packet(&ack_pkt, data_pkt.acknum, data_pkt.seqnum + data_pkt.length, '\0', '\0', 1, &empty_payload);
+        //         //         sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        //         //         printSend(&ack_pkt, 1);
+        //         //     }
+        //         //     else { 
+        //         //         //received an ack so send pkt 
+        //         //         if (order == data_pkt.seqnum) {
+        //         //             // is in order
+        //         //             size_t availableSpace = content_length - str_len;
+        //         //             // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
+        //         //             memcpy(str_to_write + str_len, data_pkt.payload, availableSpace < data_pkt.length ? availableSpace : data_pkt.length);
+        //         //             str_len = strlen(str_to_write);
+        //         //             // printf("curr %s\n", str_to_write);
+        //         //             order = data_pkt.seqnum + (unsigned short)data_pkt.length;
+        //         //             last_in_order_seqnum++;
+
+        //         //             //now check if the buffer has items and see if the top item is the next item
+        //         //             while (!queue_empty(&pkt_buf) && pkt_buf.front->curr.seqnum == order) {
+        //         //                 struct packet* temp = dequeue(&pkt_buf, NULL, 0);
+        //         //                 order = temp->seqnum + (unsigned short)temp->length;
+        //         //                 availableSpace = content_length - strlen(str_to_write) - 1;
+        //         //                 memcpy(str_to_write + str_len, temp->payload, availableSpace < temp->length ? availableSpace : temp->length);
+        //         //                 str_len = strlen(str_to_write);
+        //         //                 free(temp); //free temp since underneath the packet was allocated using malloc
+        //         //             }
+        //         //             build_packet(&ack_pkt, data_pkt.acknum, order, '\0', '\0', 1, &empty_payload);
+        //         //         }
+        //         //         else {
+        //         //             // packet was out of order
+        //         //             build_packet(&ack_pkt, last_in_order_seqnum + 1, order, '\0', '\0', 1, &empty_payload);
+        //         //             enqueue(&pkt_buf, &data_pkt, 1);
+        //         //         }
                         
-                    }
-                }
-                else {
-                    //signifies that the client is done
-                    while (!queue_empty(&pkt_buf) && pkt_buf.front->curr.seqnum == order) {
-                        struct packet* temp = dequeue(&pkt_buf, NULL);
-                        order = temp->seqnum + (unsigned short)temp->length;
-                        size_t availableSpace = content_length - strlen(str_to_write) - 1;
-                        strncat(str_to_write, temp->payload, availableSpace); //write to the string
+        //         //         sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        //         //         printSend(&ack_pkt, 0);
 
-                        free(temp); //free temp since underneath the packet was allocated using malloc
+        //         //         // the seqnum being sent by the server is wrong
+                        
+        //         //     }
+        //         // }
+        //         // else {
+        //         //     //signifies that the client is done
+        //         //     while (!queue_empty(&pkt_buf) && pkt_buf.front->curr.seqnum == order) {
+        //         //         struct packet* temp = dequeue(&pkt_buf, NULL, 0);
+        //         //         order = temp->seqnum + (unsigned short)temp->length;
+        //         //         size_t availableSpace = content_length - strlen(str_to_write) - 1;
+        //         //         strncat(str_to_write, temp->payload, availableSpace); //write to the string
 
-                        //TODO: send the closing ack
-                    }
-                    struct packet ack_pkt;
-                    char empty_payload[1] = "";
-                    build_packet(&ack_pkt, data_pkt.acknum + 1, data_pkt.seqnum, '\0', '1', 1, &empty_payload);
-                    sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                    printSend(&ack_pkt, 0);
-                    break;
-                }
-            }
-        }
+        //         //         free(temp); //free temp since underneath the packet was allocated using malloc
+
+        //         //         //TODO: send the closing ack
+        //         //     }
+        //         //     struct packet ack_pkt;
+        //         //     char empty_payload[1] = "";
+        //         //     build_packet(&ack_pkt, data_pkt.acknum + 1, data_pkt.seqnum, '\0', '1', 1, &empty_payload);
+        //         //     sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        //         //     printSend(&ack_pkt, 0);
+        //         //     break;
+        //         // }
+        //     }
+        //     else {
+        //         // temporarily unavailable
+        //         struct packet ack_pkt;
+        //         char empty_payload[1] = "";
+        //         build_packet(&ack_pkt, seq_num++, order, '\0', '1', 1, &empty_payload);
+        //         sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
+        //         printSend(&ack_pkt, 0);
+        //     }
+        // }
     }
     // printf("output: %s\n", str_to_write);
     size_t bytesWritten = fwrite(str_to_write, sizeof(char), strlen(str_to_write), fp);

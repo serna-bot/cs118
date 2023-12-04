@@ -147,7 +147,7 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
     return 1;
 }
 
-struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
+struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, int all_before_flag) {
     if (!queue_empty(pkt_queue)) {
         struct packet* copy = (struct packet*)malloc(sizeof(struct packet));
         if (!rcv_pkt) {
@@ -169,9 +169,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt) {
             struct pck_node* prev = NULL;
 
             while(curr) {
-                if (curr->curr.acknum == rcv_pkt->seqnum && curr->curr.seqnum + curr->curr.length == rcv_pkt->acknum) {
+                int found = all_before_flag ? curr->curr.acknum <= rcv_pkt->seqnum : 
+                    curr->curr.acknum == rcv_pkt->seqnum && curr->curr.seqnum + curr->curr.length == rcv_pkt->acknum;
+                if (found) {
                     // printf("found, dequeuing\n");
-                    memcpy(copy, curr, sizeof(struct packet));
+                    if (curr->curr.acknum == rcv_pkt->seqnum) memcpy(copy, curr, sizeof(struct packet));
                     if (prev == NULL) {
                         // found as the first item
                         pkt_queue->front = curr->next;
