@@ -8,6 +8,30 @@
 
 #include "utils.h"
 
+void send_pkts_in_queue(struct packet_queue* pkt_queue, struct sockaddr_in* server_addr_to, int send_sockfd) {
+    struct pck_node curr_node = pkt_queue->front;
+    while (curr_node) {
+        sendto(send_sockfd, &(curr_node->curr), sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+        curr_node = curr_node->next;
+    }
+}
+
+int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in_order_seq, unsigned int last_ack_num, unsigned int file_sz, FILE *fp) {
+    if (pkt_queue->count < win_sze) {
+        unsigned int count = last_in_order_seq;
+        for (int i = pkt_queue->count; i < win_sze, i++) {
+            struct packet curr_pkt;
+            unsigned int last_length = (sz - count < PAYLOAD_SIZE) ? sz-count : PAYLOAD_SIZE;
+            process_input_packets(&curr_pkt, fp, count, last_ack_num++, last_length);
+            enqueue(pkt_queue, &curr_pkt, 0);
+            count += last_length;
+            if (count >= sz ) return 0;
+        }
+        return 1;
+    }
+    return -1;
+}
+
 //returns if client is done or not
 int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_queue, int last_seqnum, int *window_sze, int *dupe_acks, unsigned int *exp_seq, unsigned int *exp_ack, struct packet* last_pkt, struct sockaddr_in* server_addr_to, int send_sockfd) {
 
@@ -134,7 +158,6 @@ int main(int argc, char *argv[]) {
     //build packet queue
     int pkt_buf_sze = (int)(sz/PAYLOAD_SIZE)+3; // should be +2 for the closing packet and also the heaader packet
     struct packet pkts_to_send[pkt_buf_sze]; 
-    int count = 0, k = 1;
     int last_length = 0;
 
     //add the header packet
@@ -142,22 +165,19 @@ int main(int argc, char *argv[]) {
     char const header_data[HEADER_SIZE];
     sprintf(header_data,"Content Length: %d\n", sz);
     build_packet(&header_pkt, 0, 0, '\0', '\0', HEADER_SIZE, &header_data);
-    pkts_to_send[0] = header_pkt;
+    enqueue(&pkt_queue, &header_pkt, 0);
+    // pkts_to_send[0] = header_pkt;
 
-    for (int i = 1; i < pkt_buf_sze - 1 && count < sz; i++) {
-        struct packet curr_pkt;
-        if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
-        else last_length = PAYLOAD_SIZE;
-        process_input_packets(&curr_pkt, fp, count, k, last_length);
-        pkts_to_send[i] = curr_pkt;
-        count += last_length;
-        k ++; //for the ACK
-    }
+    // for (int i = 1; i < pkt_buf_sze - 1 && count < sz; i++) {
+    //     struct packet curr_pkt;
+    //     if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
+    //     else last_length = PAYLOAD_SIZE;
+    //     process_input_packets(&curr_pkt, fp, count, k, last_length);
+    //     pkts_to_send[i] = curr_pkt;
+    //     count += last_length;
+    //     k ++; //for the ACK
+    // }
     //add the closing packet
-    struct packet closing_pkt;
-    char const closing_data[1] = "";
-    build_packet(&closing_pkt, sz+HEADER_SIZE, k, '1', '\0', 1, &closing_data);
-    pkts_to_send[pkt_buf_sze - 1] = closing_pkt;
 
     int flags = fcntl(listen_sockfd, F_GETFL, 0);
     fcntl(listen_sockfd, F_SETFL, flags | O_NONBLOCK | O_NDELAY); //making the listen socket non-blocking
@@ -167,7 +187,8 @@ int main(int argc, char *argv[]) {
     struct packet_queue pkt_queue;
     init_packet_queue(&pkt_queue);
     int window_sze = 1, j = 0, acks_rcvd = 0, dup_acks = 0;
-    unsigned int exp_ack = 0, exp_seq = 0;
+    unsigned int exp_ack = 0, exp_seq = 0, last_in_order_seq = 0;
+    int count = 0, last_ack_num = 0;
 
     // printf("packets num: %d\n", pkt_buf_sze);
     
@@ -175,13 +196,20 @@ int main(int argc, char *argv[]) {
 
         //populate our sliding window (pkt_queue) change this somehow to deal with data if we are retransitting
         printf("STRTING ANOTHER LOOP! window size: %d ______________________\n", window_sze);
-        for (int i = pkt_queue.count; j < pkt_buf_sze - 1 && i < window_sze; i++) {
-            sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
-            printSend(&pkts_to_send[j], 0);
-            // printPayload(&pkts_to_send[j]);
-            enqueue(&pkt_queue, &pkts_to_send[j], 0);
-            j++;
-        }
+        // for (int i = pkt_queue.count; last_in_order_seq <= sz && i < window_sze; i++) {
+        //     // sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+        //     // printSend(&pkts_to_send[j], 0);
+        //     // // printPayload(&pkts_to_send[j]);
+        //     // enqueue(&pkt_queue, &pkts_to_send[j], 0);
+        //     // j++;
+        //     struct packet curr_pkt;
+        //     if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
+        //     else last_length = PAYLOAD_SIZE;
+        //     process_input_packets(&curr_pkt, fp, count, k++, last_length);
+
+        // }
+        int res_add_win = add_to_win(&pkt_queue, window_sze, last_in_order_seq, last_ack_num + 1, sz, fp);
+        send_pkts_in_queue(&pkt_queue, &server_addr_to, send_sockfd);
         
         fd_set ready_fds;
         struct timeval timeout;
@@ -259,6 +287,9 @@ int main(int argc, char *argv[]) {
                 //TODO: later you want ssthresh
             }
              
+        }
+        if (res_add_win) {
+            // construct and send the last ack on the next cycle
         }
         printf("end\n");
         
