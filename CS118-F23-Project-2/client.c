@@ -8,12 +8,14 @@
 
 #include "utils.h"
 
-void send_pkts_in_queue(struct packet_queue* pkt_queue, struct sockaddr_in* server_addr_to, int send_sockfd) {
+void send_pkts_in_queue(struct packet_queue* pkt_queue, int window_sze, struct sockaddr_in* server_addr_to, int send_sockfd) {
     struct pck_node* curr_node = pkt_queue->front;
-    while (curr_node) {
+    int i = 0;
+    while (curr_node && i < window_sze) {
         sendto(send_sockfd, curr_node->curr, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
         printSend(curr_node->curr, 0);
         curr_node = curr_node->next;
+        i++;
     }
 }
 
@@ -38,11 +40,14 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
 
     if (ack_pkt->ack) {
         printf("Received closing ACK. Exiting loop.\n");
+        struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
+        free(popped_pkt);
         return 0;
     }
     else if (ack_pkt->acknum == last_seqnum) {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
         free(popped_pkt);
+        printf("Queue size after dequeuing: %d\n", pkt_queue->count);
         struct packet last_pkt;
         char empty_payload[1] = "";
         build_packet(&last_pkt, (unsigned short) last_seqnum, ack_pkt->seqnum, '1', '\0', 1, &empty_payload);
@@ -56,7 +61,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
     else {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 0);
         if (!popped_pkt) {
-            if (ack_pkt->seqnum == *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) {
+            if (ack_pkt->seqnum == *ack_exp_seq) {
                 //dupe ack
                 if (*dupe_acks == 3) {
                     *dupe_acks = 0;
@@ -84,6 +89,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
             else if (ack_pkt->seqnum != *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) perror("something wrong with popped packet");
             *ack_exp_seq = popped_pkt->acknum + 1;
             *ack_exp_ack = popped_pkt->seqnum + popped_pkt->length;
+            printf("new expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
             free(popped_pkt);
         }
         
@@ -194,7 +200,7 @@ int main(int argc, char *argv[]) {
         printf("STRTING ANOTHER LOOP! window size: %d ______________________\n", window_sze);
     
         int res_add_win = add_to_win(&pkt_queue, window_sze, last_in_order_seq, ack_exp_seq, sz, fp);
-        send_pkts_in_queue(&pkt_queue, &server_addr_to, send_sockfd);
+        send_pkts_in_queue(&pkt_queue, window_sze, &server_addr_to, send_sockfd);
         
         fd_set ready_fds;
         struct timeval timeout;
@@ -203,15 +209,15 @@ int main(int argc, char *argv[]) {
         FD_ZERO(&ready_fds);
         max_fd = listen_sockfd + 1;
         FD_SET(listen_sockfd, &ready_fds);
-
-        // Set the timeout for select
-        timeout.tv_sec = TIMEOUT;
-        timeout.tv_usec = 0;
-
+        
         int pkts_in_transmission = pkt_queue.count;
 
         printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkts_in_transmission);
-        while (pkts_in_transmission > 0) {
+        while (!queue_empty(&pkt_queue)) {
+            // Set the timeout for select
+            timeout.tv_sec = TIMEOUT;
+            timeout.tv_usec = 0;
+
             int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
             if (ready == -1) {
                 perror("select error.");
@@ -231,12 +237,14 @@ int main(int argc, char *argv[]) {
                     if (response == 0) {
                         // printf("sent last one");
                         last_in_order_seq = ack_exp_ack;
-                        pkts_in_transmission--;
+                        ack_exp_ack = sz + HEADER_SIZE + 1;
+                        break;
+                        // pkts_in_transmission--;
                     }
                     else if (response == 1) {
                         // printf("normal behavior");
                         last_in_order_seq = ack_exp_ack;
-                        pkts_in_transmission--;
+                        // pkts_in_transmission--;
                     }
                     else if (response == 2) {
                         // printf("dupe ack sent");
@@ -265,14 +273,14 @@ int main(int argc, char *argv[]) {
                 if (popped_pkt) {
                     sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
                     printSend(popped_pkt, 1);
-                    enqueue(&pkt_queue, popped_pkt, 0); //do not free popped_pkt since it is being reenqueued
+                    enqueue(&pkt_queue, popped_pkt, 1); //do not free popped_pkt since it is being reenqueued
                     free(popped_pkt);
                     // we want to change our algorithm
 
                     // [][][retransmitted packet]
                 }
                 window_sze = 1;
-                emergency++;
+                break;
             }
              
         }

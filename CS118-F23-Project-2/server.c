@@ -28,6 +28,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
             build_packet(&ack_pkt, data_pkt->acknum, data_pkt->seqnum + data_pkt->length, '\0', '\0', 1, &empty_payload);
             sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
             printSend(&ack_pkt, 1);
+            return 4;
         }
         //received an ack so update the most current in order packet
         else if (*order == data_pkt->seqnum) {
@@ -167,15 +168,15 @@ int main() {
     FD_ZERO(&ready_fds);
     max_fd = listen_sockfd + 1;
     FD_SET(listen_sockfd, &ready_fds);
-
-    // Set the timeout for select
-    timeout.tv_sec = SERVER_TIMEOUT;  
-    timeout.tv_usec = 0;
     
     //write to file
     while(1) {
-        
-        int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
+        printf("ready\n");
+        // Set the timeout for select
+        timeout.tv_sec = TIMEOUT;
+        timeout.tv_usec = 0;
+
+        int ready = rcv_first_pkt ? select(max_fd, &ready_fds, NULL, NULL, &timeout) : select(max_fd, &ready_fds, NULL, NULL, NULL);
 
         if (ready == -1) {
             perror("select error.");

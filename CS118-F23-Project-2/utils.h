@@ -15,7 +15,6 @@
 #define PAYLOAD_SIZE 1024
 #define WINDOW_SIZE 5
 #define TIMEOUT 2
-#define SERVER_TIMEOUT 4
 #define MAX_SEQUENCE 1024
 #define MAX_PKT_QUEUE 100
 
