@@ -209,9 +209,9 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
             struct pck_node* prev = NULL;
 
             while(curr) {
-                int found = all_before_flag ? curr->curr->acknum <= rcv_pkt->seqnum : 
-                    curr->curr->acknum == rcv_pkt->seqnum && curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
-                if (found) {
+                // int found = all_before_flag ?  : 
+                //     curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
+                if (curr->curr->acknum <= rcv_pkt->seqnum) {
                     if (curr->curr->acknum == rcv_pkt->seqnum) memcpy(copy, curr->curr, sizeof(struct packet));
                     // printf("found, dequeuing %s\n", copy->payload);
                     if (prev == NULL) {

@@ -76,20 +76,19 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
                 ++*dupe_acks;
                 return 2;
             }
-            else perror("unexpected packet error");
             free(popped_pkt);
         }
         else {
             *dupe_acks = 0;
-            printf("expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
+            printf("expected ack seq_num: %u, exp ack ack_num: %u. got ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack, ack_pkt->acknum);
             if (ack_pkt->seqnum > *ack_exp_seq && ack_pkt->acknum > *ack_exp_ack) {
                 //cumulative ack
                 struct packet* temp = dequeue(pkt_queue, ack_pkt, 1); //dequeue all before it
                 if (temp) free(temp);
             }
             else if (ack_pkt->seqnum != *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) perror("something wrong with popped packet");
-            *ack_exp_seq = popped_pkt->acknum + 1;
-            *ack_exp_ack = popped_pkt->seqnum + popped_pkt->length;
+            *ack_exp_seq = ack_pkt->seqnum + 1;
+            *ack_exp_ack = ack_pkt->acknum;
             printf("new expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
             free(popped_pkt);
         }
@@ -192,8 +191,6 @@ int main(int argc, char *argv[]) {
     int emergency = 0;
     unsigned int last_in_order_seq = 0, ack_exp_ack = HEADER_SIZE, ack_exp_seq = 0;
     // int count = 0;
-
-    // printf("packets num: %d\n", pkt_buf_sze);
     
     while ( ack_exp_ack <= sz + HEADER_SIZE || !queue_empty(&pkt_queue) ) {
 
@@ -205,7 +202,7 @@ int main(int argc, char *argv[]) {
         
         int pkts_in_transmission = pkt_queue.count;
 
-        // printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkts_in_transmission);
+        printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkt_queue.count);
         while (!queue_empty(&pkt_queue)) {
             // Set the timeout for select
             fd_set ready_fds;
@@ -267,7 +264,7 @@ int main(int argc, char *argv[]) {
             //timeout occured (ready == 0)
             else {
                 //resend only the first one
-                // printf("pkt timed out\n");
+                printf("pkt timed out\n");
                 if (pkt_queue.front->curr->last) break; 
                 if (ack_exp_ack == sz + HEADER_SIZE) {
                     ack_exp_ack++;
@@ -288,9 +285,10 @@ int main(int argc, char *argv[]) {
             }
              
         }
-        if (res_add_win) {
-            // construct and send the last ack on the next cycle
-        }
+        printf("end\n");
+        // if (res_add_win) {
+        //     // construct and send the last ack on the next cycle
+        // }
         // printf("end\n");
         
     }
