@@ -15,6 +15,7 @@
 #define PAYLOAD_SIZE 1024
 #define WINDOW_SIZE 5
 #define TIMEOUT 2
+#define SERVER_TIMEOUT 4
 #define MAX_SEQUENCE 1024
 #define MAX_PKT_QUEUE 100
 
@@ -58,18 +59,23 @@ void printPayload(struct packet* pkt) {
 }
 
 struct pck_node {
-    struct packet curr;
+    struct packet* curr;
     struct pck_node* next;
 };
 
-struct pck_node* create_pck_node(struct packet pkt) {
+struct pck_node* create_pck_node(struct packet* pkt) {
     struct pck_node* new_pkt_node = (struct pck_node*)malloc(sizeof(struct pck_node));
-    new_pkt_node->curr = pkt;
+    struct packet* new_packet = (struct packet*)malloc(sizeof(struct packet));
+    new_pkt_node->curr = new_packet;
+    if (new_packet != NULL) {
+        memcpy(new_packet, pkt, sizeof(struct packet));
+    }
     new_pkt_node->next = NULL;
     return new_pkt_node;
 }
 
 void delete_pck_node(struct pck_node* node) {
+    free(node->curr);
     free(node);
 }
 
@@ -96,7 +102,7 @@ int queue_full(struct packet_queue *pkt_queue) {
 
 int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
     if (!queue_full(pkt_queue)) {
-        struct pck_node* new_pkt_node = create_pck_node(*pkt);
+        struct pck_node* new_pkt_node = create_pck_node(pkt);
         if (!in_order) {
             if (pkt_queue->front == NULL) {
                 pkt_queue->front = new_pkt_node;
@@ -119,7 +125,7 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
             }
 
             while(curr) {
-                if (curr->curr.seqnum > pkt->seqnum) {
+                if (curr->curr->seqnum > pkt->seqnum) {
                     if (!prev) {
                         pkt_queue->front = new_pkt_node;
                         new_pkt_node->next = curr;
@@ -152,8 +158,8 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
         struct packet* copy = (struct packet*)malloc(sizeof(struct packet));
         if (!rcv_pkt) {
             struct pck_node* front_pkt_node = pkt_queue->front;
-            struct packet frontPacket = front_pkt_node->curr;
-            memcpy(copy, &frontPacket, sizeof(struct packet));
+            struct packet* frontPacket = front_pkt_node->curr;
+            memcpy(copy, frontPacket, sizeof(struct packet));
 
             pkt_queue->front = front_pkt_node->next;
             delete_pck_node(front_pkt_node);
@@ -169,11 +175,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
             struct pck_node* prev = NULL;
 
             while(curr) {
-                int found = all_before_flag ? curr->curr.acknum <= rcv_pkt->seqnum : 
-                    curr->curr.acknum == rcv_pkt->seqnum && curr->curr.seqnum + curr->curr.length == rcv_pkt->acknum;
+                int found = all_before_flag ? curr->curr->acknum <= rcv_pkt->seqnum : 
+                    curr->curr->acknum == rcv_pkt->seqnum && curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
                 if (found) {
-                    // printf("found, dequeuing\n");
-                    if (curr->curr.acknum == rcv_pkt->seqnum) memcpy(copy, curr, sizeof(struct packet));
+                    if (curr->curr->acknum == rcv_pkt->seqnum) memcpy(copy, curr->curr, sizeof(struct packet));
+                    // printf("found, dequeuing %s\n", copy->payload);
                     if (prev == NULL) {
                         // found as the first item
                         pkt_queue->front = curr->next;

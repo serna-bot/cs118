@@ -19,6 +19,7 @@
         "__node_handle": "c",
         "type_traits": "c",
         "string.h": "c",
-        "ios": "c"
+        "ios": "c",
+        "unistd.h": "c"
     }
 }

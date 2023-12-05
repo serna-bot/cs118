@@ -9,23 +9,24 @@
 #include "utils.h"
 
 void send_pkts_in_queue(struct packet_queue* pkt_queue, struct sockaddr_in* server_addr_to, int send_sockfd) {
-    struct pck_node curr_node = pkt_queue->front;
+    struct pck_node* curr_node = pkt_queue->front;
     while (curr_node) {
-        sendto(send_sockfd, &(curr_node->curr), sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+        sendto(send_sockfd, curr_node->curr, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
+        printSend(curr_node->curr, 0);
         curr_node = curr_node->next;
     }
 }
 
 int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in_order_seq, unsigned int last_ack_num, unsigned int file_sz, FILE *fp) {
     if (pkt_queue->count < win_sze) {
-        unsigned int count = last_in_order_seq;
-        for (int i = pkt_queue->count; i < win_sze, i++) {
+        unsigned int count = last_in_order_seq - HEADER_SIZE;
+        for (int i = pkt_queue->count; i < win_sze; i++) {
             struct packet curr_pkt;
-            unsigned int last_length = (sz - count < PAYLOAD_SIZE) ? sz-count : PAYLOAD_SIZE;
+            unsigned int last_length = (file_sz - count < PAYLOAD_SIZE) ? file_sz-count : PAYLOAD_SIZE;
             process_input_packets(&curr_pkt, fp, count, last_ack_num++, last_length);
             enqueue(pkt_queue, &curr_pkt, 0);
             count += last_length;
-            if (count >= sz ) return 0;
+            if (count >= file_sz ) return 0;
         }
         return 1;
     }
@@ -33,18 +34,21 @@ int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in
 }
 
 //returns if client is done or not
-int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_queue, int last_seqnum, int *window_sze, int *dupe_acks, unsigned int *exp_seq, unsigned int *exp_ack, struct packet* last_pkt, struct sockaddr_in* server_addr_to, int send_sockfd) {
+int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_queue, int last_seqnum, int *window_sze, int *dupe_acks, unsigned int *ack_exp_seq, unsigned int *ack_exp_ack, struct sockaddr_in* server_addr_to, int send_sockfd) {
 
     if (ack_pkt->ack) {
         printf("Received closing ACK. Exiting loop.\n");
         return 0;
     }
     else if (ack_pkt->acknum == last_seqnum) {
-        struct packet* temp = dequeue(pkt_queue, ack_pkt, 0);
-        if (temp) free(temp);
-        sendto(send_sockfd, last_pkt, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
-        printSend(last_pkt, 0);
-        enqueue(pkt_queue, last_pkt, 0);
+        struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
+        free(popped_pkt);
+        struct packet last_pkt;
+        char empty_payload[1] = "";
+        build_packet(&last_pkt, (unsigned short) last_seqnum, ack_pkt->seqnum, '1', '\0', 1, &empty_payload);
+        sendto(send_sockfd, &last_pkt, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
+        printSend(&last_pkt, 0);
+        enqueue(pkt_queue, &last_pkt, 0);
         *window_sze = 1;
         printf("Queue size after sending last packet: %d\n", pkt_queue->count);
         return 0;
@@ -52,14 +56,16 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
     else {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 0);
         if (!popped_pkt) {
-            if (ack_pkt->seqnum == *exp_seq && ack_pkt->acknum != *exp_ack) {
+            if (ack_pkt->seqnum == *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) {
                 //dupe ack
                 if (*dupe_acks == 3) {
                     *dupe_acks = 0;
                     *window_sze = *window_sze/2 > 0 ? *window_sze/2 : 1;
 
                     sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
+                    printSend(popped_pkt, 1);
                     enqueue(pkt_queue, popped_pkt, 1);
+                    free(popped_pkt);
                     return 3; //initiate fast retransmit
                 }
                 ++*dupe_acks;
@@ -69,14 +75,15 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
             free(popped_pkt);
         }
         else {
-            if (ack_pkt->seqnum > *exp_seq && ack_pkt->acknum > *exp_ack) {
+            printf("expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
+            if (ack_pkt->seqnum > *ack_exp_seq && ack_pkt->acknum > *ack_exp_ack) {
                 //cumulative ack
                 struct packet* temp = dequeue(pkt_queue, ack_pkt, 1); //dequeue all before it
                 if (temp) free(temp);
             }
-            else if (ack_pkt->seqnum != *exp_seq && ack_pkt->acknum != *exp_ack) perror("something wrong with popped packet");
-            *exp_seq = popped_pkt->acknum;
-            *exp_ack = popped_pkt->seqnum + popped_pkt->length;
+            else if (ack_pkt->seqnum != *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) perror("something wrong with popped packet");
+            *ack_exp_seq = popped_pkt->acknum + 1;
+            *ack_exp_ack = popped_pkt->seqnum + popped_pkt->length;
             free(popped_pkt);
         }
         
@@ -156,59 +163,37 @@ int main(int argc, char *argv[]) {
     fseek(fp, 0L, SEEK_SET);
 
     //build packet queue
-    int pkt_buf_sze = (int)(sz/PAYLOAD_SIZE)+3; // should be +2 for the closing packet and also the heaader packet
-    struct packet pkts_to_send[pkt_buf_sze]; 
-    int last_length = 0;
+    // int pkt_buf_sze = (int)(sz/PAYLOAD_SIZE)+3; // should be +2 for the closing packet and also the heaader packet
+    // struct packet pkts_to_send[pkt_buf_sze]; 
+    // int last_length = 0;
 
-    //add the header packet
-    struct packet header_pkt;
-    char const header_data[HEADER_SIZE];
-    sprintf(header_data,"Content Length: %d\n", sz);
-    build_packet(&header_pkt, 0, 0, '\0', '\0', HEADER_SIZE, &header_data);
-    enqueue(&pkt_queue, &header_pkt, 0);
-    // pkts_to_send[0] = header_pkt;
-
-    // for (int i = 1; i < pkt_buf_sze - 1 && count < sz; i++) {
-    //     struct packet curr_pkt;
-    //     if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
-    //     else last_length = PAYLOAD_SIZE;
-    //     process_input_packets(&curr_pkt, fp, count, k, last_length);
-    //     pkts_to_send[i] = curr_pkt;
-    //     count += last_length;
-    //     k ++; //for the ACK
-    // }
-    //add the closing packet
 
     int flags = fcntl(listen_sockfd, F_GETFL, 0);
     fcntl(listen_sockfd, F_SETFL, flags | O_NONBLOCK | O_NDELAY); //making the listen socket non-blocking
-    
-    
 
     struct packet_queue pkt_queue;
     init_packet_queue(&pkt_queue);
+
+    //add the header packet
+    struct packet header_pkt;
+    char header_data[HEADER_SIZE];
+    sprintf(&header_data,"Content Length: %d\n", sz);
+    build_packet(&header_pkt, 0, 0, '\0', '\0', HEADER_SIZE, &header_data);
+    enqueue(&pkt_queue, &header_pkt, 0);
+    
     int window_sze = 1, j = 0, acks_rcvd = 0, dup_acks = 0;
-    unsigned int exp_ack = 0, exp_seq = 0, last_in_order_seq = 0;
-    int count = 0, last_ack_num = 0;
+    int emergency = 0;
+    unsigned int last_in_order_seq = 0, ack_exp_ack = HEADER_SIZE, ack_exp_seq = 0;
+    // int count = 0;
 
     // printf("packets num: %d\n", pkt_buf_sze);
     
-    while ( acks_rcvd < pkt_buf_sze || !queue_empty(&pkt_queue) ) {
+    while ( ack_exp_ack <= sz + HEADER_SIZE || !queue_empty(&pkt_queue) ) {
 
         //populate our sliding window (pkt_queue) change this somehow to deal with data if we are retransitting
         printf("STRTING ANOTHER LOOP! window size: %d ______________________\n", window_sze);
-        // for (int i = pkt_queue.count; last_in_order_seq <= sz && i < window_sze; i++) {
-        //     // sendto(send_sockfd, &pkts_to_send[j], sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
-        //     // printSend(&pkts_to_send[j], 0);
-        //     // // printPayload(&pkts_to_send[j]);
-        //     // enqueue(&pkt_queue, &pkts_to_send[j], 0);
-        //     // j++;
-        //     struct packet curr_pkt;
-        //     if (sz - count < PAYLOAD_SIZE) last_length = sz-count;
-        //     else last_length = PAYLOAD_SIZE;
-        //     process_input_packets(&curr_pkt, fp, count, k++, last_length);
-
-        // }
-        int res_add_win = add_to_win(&pkt_queue, window_sze, last_in_order_seq, last_ack_num + 1, sz, fp);
+    
+        int res_add_win = add_to_win(&pkt_queue, window_sze, last_in_order_seq, ack_exp_seq, sz, fp);
         send_pkts_in_queue(&pkt_queue, &server_addr_to, send_sockfd);
         
         fd_set ready_fds;
@@ -220,14 +205,14 @@ int main(int argc, char *argv[]) {
         FD_SET(listen_sockfd, &ready_fds);
 
         // Set the timeout for select
-        timeout.tv_sec = TIMEOUT;  
+        timeout.tv_sec = TIMEOUT;
         timeout.tv_usec = 0;
 
         int pkts_in_transmission = pkt_queue.count;
-        int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
 
         printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkts_in_transmission);
         while (pkts_in_transmission > 0) {
+            int ready = select(max_fd, &ready_fds, NULL, NULL, &timeout);
             if (ready == -1) {
                 perror("select error.");
             }
@@ -242,13 +227,15 @@ int main(int argc, char *argv[]) {
                     acks_rcvd++;
                     printRecv(&ack_pkt);
 
-                    int response = handle_successful_recv(&ack_pkt, &pkt_queue, sz + HEADER_SIZE, &window_sze, &dup_acks, &exp_seq, &exp_ack, &pkts_to_send[pkt_buf_sze - 1], &server_addr_to, send_sockfd);
+                    int response = handle_successful_recv(&ack_pkt, &pkt_queue, sz + HEADER_SIZE, &window_sze, &dup_acks, &ack_exp_seq, &ack_exp_ack, &server_addr_to, send_sockfd);
                     if (response == 0) {
                         // printf("sent last one");
+                        last_in_order_seq = ack_exp_ack;
                         pkts_in_transmission--;
                     }
                     else if (response == 1) {
                         // printf("normal behavior");
+                        last_in_order_seq = ack_exp_ack;
                         pkts_in_transmission--;
                     }
                     else if (response == 2) {
@@ -273,18 +260,19 @@ int main(int argc, char *argv[]) {
             else {
                 //resend only the first one
                 printf("pkt timed out\n");
-                if (pkt_queue.front->curr.last) break; 
+                if (pkt_queue.front->curr->last) break; 
                 struct packet* popped_pkt = dequeue(&pkt_queue, NULL, 0);
                 if (popped_pkt) {
                     sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
                     printSend(popped_pkt, 1);
                     enqueue(&pkt_queue, popped_pkt, 0); //do not free popped_pkt since it is being reenqueued
+                    free(popped_pkt);
                     // we want to change our algorithm
 
                     // [][][retransmitted packet]
                 }
                 window_sze = 1;
-                //TODO: later you want ssthresh
+                emergency++;
             }
              
         }
