@@ -61,7 +61,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
     else {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 0);
         if (!popped_pkt) {
-            if (ack_pkt->seqnum == *ack_exp_seq) {
+            if (ack_pkt->acknum == *ack_exp_ack) {
                 //dupe ack
                 if (*dupe_acks == 3) {
                     *dupe_acks = 0;
@@ -80,6 +80,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
             free(popped_pkt);
         }
         else {
+            *dupe_acks = 0;
             printf("expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
             if (ack_pkt->seqnum > *ack_exp_seq && ack_pkt->acknum > *ack_exp_ack) {
                 //cumulative ack

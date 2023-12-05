@@ -152,6 +152,41 @@ int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
     return 1;
 }
 
+int find_queue(struct packet_queue* pkt_queue, unsigned short rcv_seq_num) {
+    if (!queue_empty(pkt_queue)) {
+        struct pck_node* curr = pkt_queue->front;
+        struct pck_node* prev = NULL;
+
+        while(curr) {
+            if (curr->curr->seqnum == rcv_seq_num) {
+                // printf("found, dequeuing %s\n", copy->payload);
+                if (prev == NULL) {
+                    // found as the first item
+                    pkt_queue->front = curr->next;
+                    if (pkt_queue->front == NULL) {
+                        // queue is empty now
+                        pkt_queue->rear = NULL;
+                    }
+                }
+                else {
+                    // oacket found is not the first value
+                    prev->next = curr->next;
+                    if (prev->next == NULL) {
+                        // If the found packet is the last in the queue, update the rear pointer
+                        pkt_queue->rear = prev;
+                    }
+                }
+                // printf("done searching queue size: %d\n", pkt_queue->count);
+                // if (pkt_queue->front) printf("front: %d\n", pkt_queue->front->curr.seqnum);
+                return 1;
+            }
+            prev = curr;
+            curr = curr->next;
+        }
+    }
+    return 0;
+}
+
 struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, int all_before_flag) {
     if (!queue_empty(pkt_queue)) {
         struct packet* copy = (struct packet*)malloc(sizeof(struct packet));

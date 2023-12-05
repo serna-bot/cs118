@@ -13,7 +13,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
     size_t str_len = (str_to_write != NULL) ? strlen(str_to_write) : 0;
     if (!data_pkt->last) {
         // handle the packets if it is not the closing packet
-        // printf("Expecting packet with sequence number: %u. Got %d\n", *order, data_pkt->seqnum);
+        printf("Expecting packet with sequence number: %u. Got %d\n", *order, data_pkt->seqnum);
         struct packet ack_pkt;
         char empty_payload[1] = "";
 
@@ -24,7 +24,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
         // is the first packet
         if (data_pkt->seqnum < *order) {
             // catching if first packet was lost
-            // printf("Seqnum of data is less than expected: %u.\n", data_pkt->seqnum );
+            printf("Seqnum of data is less than expected: %u.\n", data_pkt->seqnum );
             build_packet(&ack_pkt, data_pkt->acknum, data_pkt->seqnum + data_pkt->length, '\0', '\0', 1, &empty_payload);
             sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
             printSend(&ack_pkt, 1);
@@ -33,7 +33,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
         //received an ack so update the most current in order packet
         else if (*order == data_pkt->seqnum) {
             // is in order
-            // printf("Packet with seq %u was in order.", *order);
+            printf("Packet with seq %u was in order.", *order);
             size_t availableSpace = (*content_length) - str_len;
             // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
             memcpy(str_to_write + str_len, data_pkt->payload, availableSpace < data_pkt->length ? availableSpace : data_pkt->length);
@@ -43,7 +43,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
             // printf("checking pkt buffer %d\n", pkt_buf->count);
 
             //now check if the buffer has items and see if the top item is the next item
-            while (!queue_empty(pkt_buf) && pkt_buf->front->curr->seqnum == order) {
+            while (!queue_empty(pkt_buf) && pkt_buf->front->curr->seqnum == *order) {
                 struct packet* temp = dequeue(pkt_buf, NULL, 0);
                 *order = temp->seqnum + (unsigned short)temp->length;
                 availableSpace = content_length - strlen(str_to_write) - 1;
@@ -62,7 +62,8 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
         else {
             // packet was out of order
             // build_packet(ack_pkt, last_in_order_seqnum + 1, order, '\0', '\0', 1, &empty_payload);
-            enqueue(pkt_buf, data_pkt, 1);
+            printf("Packet was out of order. Expecting %u but got %u.\n", *order, data_pkt->seqnum);
+            if (!find_queue(pkt_buf, data_pkt->seqnum)) enqueue(pkt_buf, data_pkt, 1);
             return 2;
         }
             
@@ -171,7 +172,6 @@ int main() {
     
     //write to file
     while(1) {
-        printf("ready\n");
         // Set the timeout for select
         fd_set ready_fds;
         struct timeval timeout;
