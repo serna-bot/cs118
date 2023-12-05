@@ -39,7 +39,7 @@ int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in
 int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_queue, int last_seqnum, int *window_sze, int *dupe_acks, unsigned int *ack_exp_seq, unsigned int *ack_exp_ack, struct sockaddr_in* server_addr_to, int send_sockfd) {
 
     if (ack_pkt->ack) {
-        printf("Received closing ACK. Exiting loop.\n");
+        // printf("Received closing ACK. Exiting loop.\n");
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
         free(popped_pkt);
         return 0;
@@ -47,7 +47,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
     else if (ack_pkt->acknum == last_seqnum) {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
         free(popped_pkt);
-        printf("Queue size after dequeuing: %d\n", pkt_queue->count);
+        // printf("Queue size after dequeuing: %d\n", pkt_queue->count);
         struct packet last_pkt;
         char empty_payload[1] = "";
         build_packet(&last_pkt, (unsigned short) last_seqnum, ack_pkt->seqnum, '1', '\0', 1, &empty_payload);
@@ -55,7 +55,7 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
         printSend(&last_pkt, 0);
         enqueue(pkt_queue, &last_pkt, 0);
         *window_sze = 1;
-        printf("Queue size after sending last packet: %d\n", pkt_queue->count);
+        // printf("Queue size after sending last packet: %d\n", pkt_queue->count);
         return 0;
     }
     else {
@@ -202,19 +202,19 @@ int main(int argc, char *argv[]) {
         int res_add_win = add_to_win(&pkt_queue, window_sze, last_in_order_seq, ack_exp_seq, sz, fp);
         send_pkts_in_queue(&pkt_queue, window_sze, &server_addr_to, send_sockfd);
         
-        fd_set ready_fds;
-        struct timeval timeout;
-        int max_fd;
-        
-        FD_ZERO(&ready_fds);
-        max_fd = listen_sockfd + 1;
-        FD_SET(listen_sockfd, &ready_fds);
-        
         int pkts_in_transmission = pkt_queue.count;
 
-        printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkts_in_transmission);
+        // printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkts_in_transmission);
         while (!queue_empty(&pkt_queue)) {
             // Set the timeout for select
+            fd_set ready_fds;
+            struct timeval timeout;
+            int max_fd;
+            
+            FD_ZERO(&ready_fds);
+            max_fd = listen_sockfd + 1;
+            FD_SET(listen_sockfd, &ready_fds);
+
             timeout.tv_sec = TIMEOUT;
             timeout.tv_usec = 0;
 
@@ -236,9 +236,8 @@ int main(int argc, char *argv[]) {
                     int response = handle_successful_recv(&ack_pkt, &pkt_queue, sz + HEADER_SIZE, &window_sze, &dup_acks, &ack_exp_seq, &ack_exp_ack, &server_addr_to, send_sockfd);
                     if (response == 0) {
                         // printf("sent last one");
+                        ack_exp_ack = sz + HEADER_SIZE;
                         last_in_order_seq = ack_exp_ack;
-                        ack_exp_ack = sz + HEADER_SIZE + 1;
-                        break;
                         // pkts_in_transmission--;
                     }
                     else if (response == 1) {
@@ -267,12 +266,16 @@ int main(int argc, char *argv[]) {
             //timeout occured (ready == 0)
             else {
                 //resend only the first one
-                printf("pkt timed out\n");
+                // printf("pkt timed out\n");
                 if (pkt_queue.front->curr->last) break; 
+                if (ack_exp_ack == sz + HEADER_SIZE) {
+                    ack_exp_ack++;
+                    break;
+                } 
                 struct packet* popped_pkt = dequeue(&pkt_queue, NULL, 0);
                 if (popped_pkt) {
-                    sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
-                    printSend(popped_pkt, 1);
+                    // sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, &server_addr_to, sizeof(server_addr_to));
+                    // printSend(popped_pkt, 1);
                     enqueue(&pkt_queue, popped_pkt, 1); //do not free popped_pkt since it is being reenqueued
                     free(popped_pkt);
                     // we want to change our algorithm
@@ -287,7 +290,7 @@ int main(int argc, char *argv[]) {
         if (res_add_win) {
             // construct and send the last ack on the next cycle
         }
-        printf("end\n");
+        // printf("end\n");
         
     }
     //note header + payload must be a max of 1200 **
