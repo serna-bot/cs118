@@ -209,11 +209,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
 
             printf("trying to find %u\n", rcv_pkt->acknum);
 
-            while(curr && curr->curr->seqnum <= rcv_pkt->acknum) {
+            while(curr && curr->curr->seqnum < rcv_pkt->acknum) {
                 // int found = all_before_flag ?  : 
                 //     curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
                 printf("current %u\n", curr->curr->seqnum);
-                if (curr->curr->seqnum == rcv_pkt->acknum) {
+                if (curr->curr->seqnum + 1 == rcv_pkt->acknum) {
                     if (!all_before_flag) {
                         memcpy(copy, curr->curr, sizeof(struct packet));
                         pkt_queue->front = curr->next;
@@ -255,11 +255,11 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
 }
 
 //util function to create pcket from file of size length
-void process_input_packets(struct packet* pkt, FILE* fp, unsigned int fp_pos, unsigned int ack, unsigned int length) {
+void process_input_packets(struct packet* pkt, FILE* fp, unsigned int fp_pos, unsigned int seq, unsigned int ack, unsigned int length) {
     char* payload = (char *)calloc(length, sizeof(char));
     fseek(fp, fp_pos, SEEK_SET);
     fread(payload, length, 1, fp);
-    build_packet(pkt, fp_pos + HEADER_SIZE, ack, '\0', '\0', length, payload);
+    build_packet(pkt, seq, ack, '\0', '\0', length, payload);
     fseek(fp, 0, SEEK_SET);
     free(payload);
 }

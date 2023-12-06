@@ -21,11 +21,12 @@ void send_pkts_in_queue(struct packet_queue* pkt_queue, int window_sze, struct s
 
 int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in_order_seq, unsigned int last_ack_num, unsigned int file_sz, FILE *fp) {
     if (pkt_queue->count < win_sze) {
-        unsigned int count = last_in_order_seq - HEADER_SIZE;
-        for (int i = pkt_queue->count; i < win_sze; i++) {
+        unsigned int count = (last_in_order_seq - 1) * PAYLOAD_SIZE;
+        unsigned int k = last_in_order_seq;
+        for (int i = pkt_queue->count; i < win_sze && count < file_sz; i++) {
             struct packet curr_pkt;
             unsigned int last_length = (file_sz - count < PAYLOAD_SIZE) ? file_sz-count : PAYLOAD_SIZE;
-            process_input_packets(&curr_pkt, fp, count, last_ack_num++, last_length);
+            process_input_packets(&curr_pkt, fp, count, k++, last_ack_num++, last_length);
             enqueue(pkt_queue, &curr_pkt, 0);
             
             count += last_length;
@@ -192,13 +193,13 @@ int main(int argc, char *argv[]) {
     print_queue(&pkt_queue);
     
     int window_sze = 1, j = 0, acks_rcvd = 0, dup_acks = 0;
-    // unsigned int pkts_to_send = sz/PAYLOAD_SIZE + 1;
-    // pkts_to_send = (sz % PAYLOAD_SIZE > 0) ? pkts_to_send + 1 : pkts_to_send;
+    unsigned int pkts_to_send = sz/PAYLOAD_SIZE + 1;
+    pkts_to_send = (sz % PAYLOAD_SIZE > 0) ? pkts_to_send + 1 : pkts_to_send;
     int emergency = 0;
-    unsigned int last_in_order_seq = 0, ack_exp_ack = HEADER_SIZE, ack_exp_seq = 0;
+    unsigned int last_in_order_seq = 0, ack_exp_ack = 1, ack_exp_seq = 0;
     // int count = 0;
     
-    while ( ack_exp_ack <= sz + HEADER_SIZE || !queue_empty(&pkt_queue) ) {
+    while ( ack_exp_ack <= pkts_to_send || !queue_empty(&pkt_queue) ) {
 
         //populate our sliding window (pkt_queue) change this somehow to deal with data if we are retransitting
         printf("STRTING ANOTHER LOOP! window size: %d ______________________\n", window_sze);
@@ -207,6 +208,8 @@ int main(int argc, char *argv[]) {
         send_pkts_in_queue(&pkt_queue, window_sze, &server_addr_to, send_sockfd);
         
         int pkts_in_transmission = pkt_queue.count;
+
+        //if == last pkt to send then send the closing ack
 
         printf("***** WAITING FOR ACKS pkts in transmission: %d ******\n", pkt_queue.count);
         while (!queue_empty(&pkt_queue)) {
@@ -237,7 +240,7 @@ int main(int argc, char *argv[]) {
                     acks_rcvd++;
                     printRecv(&ack_pkt);
 
-                    int response = handle_successful_recv(&ack_pkt, &pkt_queue, sz + HEADER_SIZE, &window_sze, &dup_acks, &ack_exp_seq, &ack_exp_ack, &server_addr_to, send_sockfd);
+                    int response = handle_successful_recv(&ack_pkt, &pkt_queue, pkts_to_send, &window_sze, &dup_acks, &ack_exp_seq, &ack_exp_ack, &server_addr_to, send_sockfd);
                     if (response == 0) {
                         // printf("sent last one");
                         ack_exp_ack = sz + HEADER_SIZE;
