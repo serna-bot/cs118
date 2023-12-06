@@ -13,7 +13,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
     size_t str_len = (str_to_write != NULL) ? strlen(str_to_write) : 0;
     if (!data_pkt->last) {
         // handle the packets if it is not the closing packet
-        printf("Expecting packet with sequence number: %u. Got %d\n", *order, data_pkt->seqnum);
+        // printf("Expecting packet with sequence number: %u. Got %d\n", *order, data_pkt->seqnum);
         struct packet ack_pkt;
         char empty_payload[1] = "";
 
@@ -23,7 +23,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
 
         if (data_pkt->seqnum < *order && data_pkt->acknum ) {
             // catching if a packet was lost
-            printf("Seqnum of data is less than expected: %u.\n", data_pkt->seqnum );
+            // printf("Seqnum of data is less than expected: %u.\n", data_pkt->seqnum );
             // build_packet(&ack_pkt, data_pkt->acknum, data_pkt->seqnum + data_pkt->length, '\0', '\0', 1, &empty_payload);
             // sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
             // printSend(&ack_pkt, 1);
@@ -32,7 +32,7 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
         //received an ack so update the most current in order packet
         else if (*order == data_pkt->seqnum) {
             // is in order
-            printf("Packet with seq %u was in order.", *order);
+            // printf("Packet with seq %u was in order.", *order);
             size_t availableSpace = (*content_length) - str_len;
             // printf("data is in order: %s available space: %d data length: %d\n", data_pkt.payload, availableSpace, data_pkt.length);
             memcpy(str_to_write + str_len, data_pkt->payload, availableSpace < data_pkt->length ? availableSpace : data_pkt->length);
@@ -56,14 +56,14 @@ int handle_succ_recv(struct packet* data_pkt, struct packet_queue* pkt_buf, char
             char empty_payload[1] = "";
             build_packet(&ack_pkt, (*seq_num)++, *order, '\0', '\0', 1, &empty_payload);
             sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, client_addr_to, sizeof(*client_addr_to));
-            printSend(&ack_pkt, 0);
+            // printSend(&ack_pkt, 0);
             return 1;
             // build_packet(ack_pkt, data_pkt.acknum, order, '\0', '\0', 1, &empty_payload);
         }
         else {
             // packet was out of order
             // build_packet(ack_pkt, last_in_order_seqnum + 1, order, '\0', '\0', 1, &empty_payload);
-            printf("Packet was out of order. Expecting %u but got %u.\n", *order, data_pkt->seqnum);
+            // printf("Packet was out of order. Expecting %u but got %u.\n", *order, data_pkt->seqnum);
             if (!find_queue(pkt_buf, data_pkt->seqnum)) enqueue(pkt_buf, data_pkt, 1);
             return 2;
         }
@@ -194,7 +194,7 @@ int main() {
             ssize_t bytes_rcv = recvfrom(listen_sockfd, &data_pkt, sizeof(struct packet), 0, (struct sockaddr *)&client_addr_from, &addr_size);
             // if (bytes_rcv < 0) perror("recvfrom");
             if (bytes_rcv > 0) {
-                printRecv(&data_pkt);
+                // printRecv(&data_pkt);
                 if (data_pkt.seqnum == 0 && str_to_write == NULL) {
                     // printf("payload: %s", data_pkt.payload);
                     sscanf(data_pkt.payload, "Content Length: %u\n", &content_length);
@@ -205,7 +205,7 @@ int main() {
                     char empty_payload[1] = "";
                     build_packet(&ack_pkt, seq_num++, data_pkt.seqnum + 1, '\0', '\0', 1, &empty_payload);
                     sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                    printSend(&ack_pkt, 0);
+                    // printSend(&ack_pkt, 0);
                     order++;
                     rcv_first_pkt = 1;
                     continue;
@@ -220,7 +220,7 @@ int main() {
                     char empty_payload[1] = "";
                     build_packet(&ack_pkt, seq_num++, order, '\0', '1', 1, &empty_payload);
                     sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-                    printSend(&ack_pkt, 0);
+                    // printSend(&ack_pkt, 0);
                     break;
                 }
             }
@@ -231,7 +231,7 @@ int main() {
             char empty_payload[1] = "";
             build_packet(&ack_pkt, seq_num - 1, order, '\0', '\0', 1, &empty_payload);
             sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0, &client_addr_to, sizeof(client_addr_to));
-            printSend(&ack_pkt, 1);
+            // printSend(&ack_pkt, 1);
         }
     }
     // printf("output: %s\n", str_to_write);

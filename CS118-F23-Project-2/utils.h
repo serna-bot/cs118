@@ -207,12 +207,12 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
             struct pck_node* curr = pkt_queue->front;
             struct pck_node* prev = NULL;
 
-            printf("trying to find %u\n", rcv_pkt->acknum);
+            // printf("trying to find %u\n", rcv_pkt->acknum);
 
             while(curr && curr->curr->seqnum < rcv_pkt->acknum) {
                 // int found = all_before_flag ?  : 
                 //     curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
-                printf("current %u\n", curr->curr->seqnum);
+                // printf("current %u\n", curr->curr->seqnum);
                 if (curr->curr->seqnum + 1 == rcv_pkt->acknum) {
                     if (!all_before_flag) {
                         memcpy(copy, curr->curr, sizeof(struct packet));
@@ -221,7 +221,7 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
                             // queue is empty now
                             pkt_queue->rear = NULL;
                         }
-                        printf("dequeuing %u\n", curr->curr->seqnum);
+                        // printf("dequeuing %u\n", curr->curr->seqnum);
                         delete_pck_node(curr);
                         
                         pkt_queue->count--;
@@ -244,7 +244,7 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
                 }
                 prev = curr;
                 curr = curr->next;
-                printf("dequeuing %u\n", curr->curr->seqnum);
+                // printf("dequeuing %u\n", curr->curr->seqnum);
                 delete_pck_node(prev);
                 
                 pkt_queue->count--;
