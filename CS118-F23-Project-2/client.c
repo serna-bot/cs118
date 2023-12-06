@@ -27,9 +27,11 @@ int add_to_win(struct packet_queue* pkt_queue, int win_sze, unsigned int last_in
             unsigned int last_length = (file_sz - count < PAYLOAD_SIZE) ? file_sz-count : PAYLOAD_SIZE;
             process_input_packets(&curr_pkt, fp, count, last_ack_num++, last_length);
             enqueue(pkt_queue, &curr_pkt, 0);
+            
             count += last_length;
             if (count >= file_sz ) return 0;
         }
+        print_queue(pkt_queue);
         return 1;
     }
     return -1;
@@ -41,12 +43,12 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
     if (ack_pkt->ack) {
         // printf("Received closing ACK. Exiting loop.\n");
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
-        free(popped_pkt);
+        // free(popped_pkt);
         return 0;
     }
     else if (ack_pkt->acknum == last_seqnum) {
         struct packet *popped_pkt = dequeue(pkt_queue, ack_pkt, 1);
-        free(popped_pkt);
+        // free(popped_pkt);
         // printf("Queue size after dequeuing: %d\n", pkt_queue->count);
         struct packet last_pkt;
         char empty_payload[1] = "";
@@ -70,27 +72,28 @@ int handle_successful_recv (struct packet* ack_pkt, struct packet_queue* pkt_que
                     sendto(send_sockfd, popped_pkt, sizeof(struct packet), 0, server_addr_to, sizeof(*server_addr_to));
                     printSend(popped_pkt, 1);
                     enqueue(pkt_queue, popped_pkt, 1);
-                    free(popped_pkt);
+                    // free(popped_pkt);
                     return 3; //initiate fast retransmit
                 }
                 ++*dupe_acks;
                 return 2;
             }
-            free(popped_pkt);
+            // if (ack_pkt->acknum > *ack_exp_ack)
+            // free(popped_pkt);
         }
         else {
             *dupe_acks = 0;
             printf("expected ack seq_num: %u, exp ack ack_num: %u. got ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack, ack_pkt->acknum);
-            if (ack_pkt->seqnum > *ack_exp_seq && ack_pkt->acknum > *ack_exp_ack) {
-                //cumulative ack
-                struct packet* temp = dequeue(pkt_queue, ack_pkt, 1); //dequeue all before it
-                if (temp) free(temp);
-            }
-            else if (ack_pkt->seqnum != *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) perror("something wrong with popped packet");
+            // if (ack_pkt->seqnum >= *ack_exp_seq && ack_pkt->acknum >= *ack_exp_ack) {
+            //     //cumulative ack
+            //     struct packet* temp = dequeue(pkt_queue, ack_pkt, 1); //dequeue all before it
+            //     if (temp) free(temp);
+            // }
+            // else if (ack_pkt->seqnum != *ack_exp_seq && ack_pkt->acknum != *ack_exp_ack) perror("something wrong with popped packet");
             *ack_exp_seq = ack_pkt->seqnum + 1;
             *ack_exp_ack = ack_pkt->acknum;
             printf("new expected ack seq_num: %u, exp ack ack_num: %u\n", *ack_exp_seq, *ack_exp_ack);
-            free(popped_pkt);
+            // free(popped_pkt);
         }
         
         ++*window_sze;
@@ -186,8 +189,11 @@ int main(int argc, char *argv[]) {
     sprintf(&header_data,"Content Length: %d\n", sz);
     build_packet(&header_pkt, 0, 0, '\0', '\0', HEADER_SIZE, &header_data);
     enqueue(&pkt_queue, &header_pkt, 0);
+    print_queue(&pkt_queue);
     
     int window_sze = 1, j = 0, acks_rcvd = 0, dup_acks = 0;
+    // unsigned int pkts_to_send = sz/PAYLOAD_SIZE + 1;
+    // pkts_to_send = (sz % PAYLOAD_SIZE > 0) ? pkts_to_send + 1 : pkts_to_send;
     int emergency = 0;
     unsigned int last_in_order_seq = 0, ack_exp_ack = HEADER_SIZE, ack_exp_seq = 0;
     // int count = 0;
@@ -265,6 +271,7 @@ int main(int argc, char *argv[]) {
             else {
                 //resend only the first one
                 printf("pkt timed out\n");
+                print_queue(&pkt_queue);
                 if (pkt_queue.front->curr->last) break; 
                 if (ack_exp_ack == sz + HEADER_SIZE) {
                     ack_exp_ack++;

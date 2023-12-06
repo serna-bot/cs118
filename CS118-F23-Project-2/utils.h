@@ -99,53 +99,52 @@ int queue_full(struct packet_queue *pkt_queue) {
     return (pkt_queue->count == MAX_PKT_QUEUE);
 }
 
+void print_queue(struct packet_queue *pkt_queue) {
+    struct pck_node* curr = pkt_queue->front;
+    while(curr) {
+        printf("Node seqnum: %u\n", curr->curr->seqnum);
+        printf("Node address: %d\n", curr);
+        curr = curr->next;
+    }
+}
+
 int enqueue(struct packet_queue *pkt_queue, struct packet *pkt, int in_order) {
     if (!queue_full(pkt_queue)) {
         struct pck_node* new_pkt_node = create_pck_node(pkt);
-        if (!in_order) {
-            if (pkt_queue->front == NULL) {
-                pkt_queue->front = new_pkt_node;
-                pkt_queue->rear = new_pkt_node;
-            }
-            else {
-                pkt_queue->rear->next = new_pkt_node;
-                pkt_queue->rear = new_pkt_node;
-            }
-            pkt_queue->count++;
-        }
-        else {
-            struct pck_node* curr = pkt_queue->front;
-            struct pck_node* prev = NULL;
+        struct pck_node* curr = pkt_queue->front;
+        struct pck_node* prev = NULL;
 
-            if (!pkt_queue->front) {
-                pkt_queue->front = new_pkt_node;
+        if (!pkt_queue->front) {
+            pkt_queue->front = new_pkt_node;
+            pkt_queue->rear = new_pkt_node;
+            pkt_queue->count++;
+            return 1;
+        }
+
+        while(curr) {
+            if (curr->curr->seqnum > pkt->seqnum) {
+                if (!prev) {
+                    pkt_queue->front = new_pkt_node;
+                    new_pkt_node->next = curr;
+                }
+                else {
+                    // oacket found is not the first value
+                    prev->next = new_pkt_node;
+                    new_pkt_node->next = curr;
+                }
                 pkt_queue->count++;
                 return 1;
             }
-
-            while(curr) {
-                if (curr->curr->seqnum > pkt->seqnum) {
-                    if (!prev) {
-                        pkt_queue->front = new_pkt_node;
-                        new_pkt_node->next = curr;
-                    }
-                    else {
-                        // oacket found is not the first value
-                        prev->next = new_pkt_node;
-                        new_pkt_node->next = curr;
-                    }
-                    pkt_queue->count++;
-                    return 1;
-                }
-                prev = curr;
-                curr = curr->next;
-                if (!curr) {
-                    prev->next = new_pkt_node;
-                }
+            prev = curr;
+            curr = curr->next;
+            if (!curr) {
+                prev->next = new_pkt_node;
+                pkt_queue->rear = new_pkt_node;
             }
-            pkt_queue->count++;
         }
+        pkt_queue->count++;
     }
+    // }
     else {
         return 0;
     }
@@ -208,36 +207,47 @@ struct packet* dequeue(struct packet_queue *pkt_queue, struct packet* rcv_pkt, i
             struct pck_node* curr = pkt_queue->front;
             struct pck_node* prev = NULL;
 
-            while(curr) {
+            printf("trying to find %u\n", rcv_pkt->acknum);
+
+            while(curr && curr->curr->seqnum <= rcv_pkt->acknum) {
                 // int found = all_before_flag ?  : 
                 //     curr->curr->seqnum + curr->curr->length == rcv_pkt->acknum;
-                if (curr->curr->acknum <= rcv_pkt->seqnum) {
-                    if (curr->curr->acknum == rcv_pkt->seqnum) memcpy(copy, curr->curr, sizeof(struct packet));
-                    // printf("found, dequeuing %s\n", copy->payload);
-                    if (prev == NULL) {
-                        // found as the first item
+                printf("current %u\n", curr->curr->seqnum);
+                if (curr->curr->seqnum == rcv_pkt->acknum) {
+                    if (!all_before_flag) {
+                        memcpy(copy, curr->curr, sizeof(struct packet));
                         pkt_queue->front = curr->next;
                         if (pkt_queue->front == NULL) {
                             // queue is empty now
                             pkt_queue->rear = NULL;
                         }
+                        printf("dequeuing %u\n", curr->curr->seqnum);
+                        delete_pck_node(curr);
+                        
+                        pkt_queue->count--;
+                        // printf("found, dequeuing %s\n", copy->payload);
+                        
+                        // printf("done searching queue size: %d\n", pkt_queue->count);
+                        // if (pkt_queue->front) printf("front: %d\n", pkt_queue->front->curr.seqnum);
+                        return copy;
                     }
                     else {
-                        // oacket found is not the first value
-                        prev->next = curr->next;
-                        if (prev->next == NULL) {
-                            // If the found packet is the last in the queue, update the rear pointer
-                            pkt_queue->rear = prev;
-                        }
+                        free(copy);
+                        return curr;
                     }
-                    delete_pck_node(curr);
-                    pkt_queue->count--;
-                    // printf("done searching queue size: %d\n", pkt_queue->count);
-                    // if (pkt_queue->front) printf("front: %d\n", pkt_queue->front->curr.seqnum);
-                    return copy;
+                }
+                
+                pkt_queue->front = curr->next;
+                if (pkt_queue->front == NULL) {
+                    // queue is empty now
+                    pkt_queue->rear = NULL;
                 }
                 prev = curr;
                 curr = curr->next;
+                printf("dequeuing %u\n", curr->curr->seqnum);
+                delete_pck_node(prev);
+                
+                pkt_queue->count--;
             }
         }
     }
